@@ -1,0 +1,34 @@
+{
+  "name": "Baka Game Bot",
+  "description": "A Telegram bot with Economy, Kill, Rob and Protection systems using MongoDB.",
+  "keywords": [
+    "telegram",
+    "bot",
+    "python",
+    "pymongo",
+    "game"
+  ],
+  "repository": "https://github.com/DevixOP/Baka",
+  "logo": "https://telegram.org/img/t_logo.png",
+  "env": {
+    "BOT_TOKEN": {
+      "description": "The API Token from @BotFather",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "Your MongoDB Atlas Connection String (mongodb+srv://...)",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}
