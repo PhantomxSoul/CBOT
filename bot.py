@@ -5,6 +5,10 @@ from datetime import datetime, timedelta
 from threading import Thread
 from flask import Flask
 
+
+# Turn off the spammy "POST /getUpdates" logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Third-party imports
 from telegram import Update, BotCommand
 from telegram.ext import (
