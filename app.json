@@ -18,6 +18,26 @@
     "MONGO_URI": {
       "description": "Your MongoDB Atlas Connection String (mongodb+srv://...)",
       "required": true
+    },
+    "OWNER_ID": {
+      "description": "Telegram user ID of the bot owner (integer, no @).",
+      "required": true
+    },
+    "SUDO_IDS": {
+      "description": "Comma-separated Telegram user IDs for sudo users (e.g. \"12345,67890\"). Leave empty if none.",
+      "required": false
+    },
+    "SUPPORT_GROUP": {
+      "description": "Link to your Telegram support group (e.g. https://t.me/YourSupportGroup).",
+      "required": false
+    },
+    "SUPPORT_CHANNEL": {
+      "description": "Link to your Telegram updates channel (e.g. https://t.me/YourUpdateChannel).",
+      "required": false
+    },
+    "OWNER_LINK": {
+      "description": "Link to the owner contact (e.g. https://t.me/YourOwnerUsername).",
+      "required": false
     }
   },
   "buildpacks": [
