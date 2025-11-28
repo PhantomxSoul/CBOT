@@ -6,7 +6,7 @@ from threading import Thread
 from flask import Flask
 
 # Third-party imports
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -22,6 +22,11 @@ import certifi
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 PORT = int(os.environ.get("PORT", 5000))
+
+# Links for Buttons
+SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "https://t.me/YourSupportGroup")
+SUPPORT_CHANNEL = os.getenv("SUPPORT_CHANNEL", "https://t.me/YourUpdateChannel")
+OWNER_LINK = os.getenv("OWNER_LINK", "https://t.me/YourOwnerUsername")
 
 # Permissions
 try:
@@ -63,11 +68,9 @@ logger = logging.getLogger(__name__)
 
 def get_mention(user_data):
     """Generates a Markdown clickable mention."""
-    # Handle Telegram User Object
     if hasattr(user_data, "id"): 
-        name = user_data.first_name.replace("[", "").replace("]", "") # Sanitize
+        name = user_data.first_name.replace("[", "").replace("]", "") 
         return f"[{name}](tg://user?id={user_data.id})"
-    # Handle Dictionary from DB
     elif isinstance(user_data, dict):
         name = user_data.get("name", "User").replace("[", "").replace("]", "")
         uid = user_data.get("user_id")
@@ -93,7 +96,6 @@ def ensure_user_exists(tg_user):
         users_collection.insert_one(new_user)
         return new_user
     else:
-        # Update username if changed
         if user_doc.get("username") != current_username:
             users_collection.update_one(
                 {"user_id": tg_user.id}, 
@@ -108,13 +110,11 @@ def resolve_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     target_doc = None
 
-    # 1. Check Reply
     if update.message.reply_to_message:
         target_tg = update.message.reply_to_message.from_user
         target_doc = ensure_user_exists(target_tg)
         return target_doc, None
 
-    # 2. Check Args (if exists)
     if args and len(args) > 0:
         for arg in args:
             if arg.startswith("@"):
@@ -141,6 +141,17 @@ def is_protected(user_data):
 def format_money(amount):
     return f"${amount:,}"
 
+def make_main_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📢 Updates", url=SUPPORT_CHANNEL),
+            InlineKeyboardButton("👥 Support", url=SUPPORT_GROUP),
+        ],
+        [
+            InlineKeyboardButton("👑 Owner", url=OWNER_LINK),
+        ]
+    ])
+
 # ================== USER COMMANDS ==================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,13 +164,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📜 **Commands:**\n"
         f"/register - Get {format_money(REGISTER_BONUS)} bonus\n"
         f"/bal - Check balance\n"
+        f"/ranking - Global Top 10\n"
         f"/kill - Kill a user\n"
         f"/rob <amount> - Rob a user\n"
-        f"/ranking - Global Top 10\n"
         f"/protect 1d - Buy protection\n"
         f"/revive - Revive yourself\n"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    # Added reply_markup here
+    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=make_main_keyboard())
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -203,13 +215,11 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Top 10 Richest
     cursor_rich = users_collection.find().sort("balance", -1).limit(10)
     rich_text = "💰 **Top 10 Richest:**\n"
     for i, doc in enumerate(cursor_rich, 1):
         rich_text += f"`{i}.` {get_mention(doc)}: **{format_money(doc['balance'])}**\n"
 
-    # Top 10 Killers
     cursor_kills = users_collection.find().sort("kills", -1).limit(10)
     kill_text = "\n⚔️ **Top 10 Killers:**\n"
     for i, doc in enumerate(cursor_kills, 1):
@@ -393,10 +403,6 @@ async def cleandb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== BOT MENU SETUP ==================
 
 async def set_bot_commands(application):
-    """
-    Sets the commands that appear when you type / in the chat.
-    Does NOT include Sudo/Owner commands.
-    """
     commands = [
         BotCommand("start", "Start the game"),
         BotCommand("register", "Get bonus coins"),
@@ -438,7 +444,6 @@ if __name__ == '__main__':
         app_bot.add_handler(CommandHandler("freerevive", freerevive))
         app_bot.add_handler(CommandHandler("cleandb", cleandb))
 
-        # Initialize Bot Commands Menu
         async def on_startup(app):
             await set_bot_commands(app)
         app_bot.post_init = on_startup
