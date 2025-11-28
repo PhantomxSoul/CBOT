@@ -2,13 +2,11 @@ import os
 import logging
 import random
 from datetime import datetime, timedelta
+from threading import Thread
+from flask import Flask
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    BotCommand,
-)
+# Third-party imports
+from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -19,77 +17,128 @@ from telegram.ext import (
 from pymongo import MongoClient
 import certifi
 
-# ================== CONFIG ==================
+# ================== CONFIGURATION ==================
 
 TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
+PORT = int(os.environ.get("PORT", 5000))
 
-# Owner id (int) and sudo user ids (comma separated) from env
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))  # set on Heroku
-SUDO_IDS = os.getenv("SUDO_IDS", "")        # e.g. "12345,67890"
-SUDO_USERS = {int(x.strip()) for x in SUDO_IDS.split(",") if x.strip().isdigit()}
+# Permissions
+# We use .strip() and int() to ensure cleaner env var parsing
+try:
+    OWNER_ID = int(os.getenv("OWNER_ID", "0").strip())
+except ValueError:
+    OWNER_ID = 0
 
-SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "https://t.me/YourSupportGroup")
-SUPPORT_CHANNEL = os.getenv("SUPPORT_CHANNEL", "https://t.me/YourUpdateChannel")
-OWNER_BUTTON_LINK = os.getenv("OWNER_LINK", "https://t.me/YourOwnerUsername")
+SUDO_IDS_STR = os.getenv("SUDO_IDS", "")
+SUDO_USERS = set()
+if SUDO_IDS_STR:
+    for x in SUDO_IDS_STR.split(","):
+        if x.strip().isdigit():
+            SUDO_USERS.add(int(x.strip()))
+SUDO_USERS.add(OWNER_ID)
 
+# Game Constants
 BOT_NAME = "🫧 ʙᴀᴋᴀ ×͜࿐"
+HEADER_ART = "◄❥͜͡⃟⃝💔꯭᪳𝄄─𝐃꯭𝐄꯭𝐀꯭𝐃<꯭/꯭᪵>𝐔꯭𝐒𝐄꯭𝐑─𝄄꯭➤⃝ ⃝⃪⃕☠️"
 REVIVE_COST = 500
 PROTECT_1D_COST = 1000
 PROTECT_2D_COST = 1800
 REGISTER_BONUS = 5000
 
-# ================ DB SETUP ==================
+# ================== DATABASE SETUP ==================
 
 client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["bakabot_db"]
 users_collection = db["users"]
 
-# ================ LOGGING ===================
+# ================== LOGGING ==================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-# ============== HELPERS =====================
+# ================== HELPER FUNCTIONS ==================
 
 def get_user(user_id):
+    """Fetch user from DB by Telegram ID."""
     return users_collection.find_one({"user_id": user_id})
 
-def create_user(user_id, first_name):
-    if get_user(user_id):
-        return False
-    new_user = {
-        "user_id": user_id,
-        "name": first_name,
-        "balance": REGISTER_BONUS,
-        "kills": 0,
-        "status": "alive",
-        "protection_expiry": datetime.utcnow(),
-        "registered_at": datetime.utcnow(),
-    }
-    users_collection.insert_one(new_user)
-    return True
+def ensure_user_exists(tg_user):
+    """
+    Get user from DB, or create basic entry if not exists.
+    Also updates the username if it changed.
+    """
+    user_doc = users_collection.find_one({"user_id": tg_user.id})
+    
+    current_username = tg_user.username.lower() if tg_user.username else None
+    
+    if not user_doc:
+        new_user = {
+            "user_id": tg_user.id,
+            "name": tg_user.first_name,
+            "username": current_username,
+            "balance": 0, # No bonus on auto-create
+            "kills": 0,
+            "status": "alive",
+            "protection_expiry": datetime.utcnow(),
+            "registered_at": datetime.utcnow(),
+        }
+        users_collection.insert_one(new_user)
+        return new_user
+    else:
+        # Update username if it's missing or changed (for @mention lookups)
+        if user_doc.get("username") != current_username:
+            users_collection.update_one(
+                {"user_id": tg_user.id}, 
+                {"$set": {"username": current_username}}
+            )
+        return user_doc
 
-def ensure_user_exists(user_id, first_name):
-    """Auto-create a minimal user without bonus if not registered yet."""
-    user = get_user(user_id)
-    if user:
-        return user
-    # No auto bonus, just basic profile
-    new_user = {
-        "user_id": user_id,
-        "name": first_name,
-        "balance": 0,
-        "kills": 0,
-        "status": "alive",
-        "protection_expiry": datetime.utcnow(),
-        "registered_at": datetime.utcnow(),
-    }
-    users_collection.insert_one(new_user)
-    return new_user
+def resolve_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Determines the target user based on:
+    1. Reply to message
+    2. Mention (@username) in args
+    3. User ID in args
+    Returns: (user_dict, error_message_string)
+    """
+    args = context.args
+    target_doc = None
+
+    # 1. Check Reply
+    if update.message.reply_to_message:
+        target_tg = update.message.reply_to_message.from_user
+        # We assume if they are replying, the user "exists" in Telegram, 
+        # but we need them in OUR db.
+        target_doc = ensure_user_exists(target_tg)
+        return target_doc, None
+
+    # 2. Check Args (if exists)
+    if args and len(args) > 0:
+        query = args[0]
+        
+        # If input is @username
+        if query.startswith("@"):
+            clean_username = query.strip("@").lower()
+            target_doc = users_collection.find_one({"username": clean_username})
+            if not target_doc:
+                return None, f"❌ Could not find user with username @{clean_username} in my database."
+            return target_doc, None
+            
+        # If input is User ID (digits)
+        if query.isdigit():
+            target_id = int(query)
+            target_doc = users_collection.find_one({"user_id": target_id})
+            if not target_doc:
+                # Try to see if it's the sender themselves? No, usually ID means target.
+                return None, f"❌ Could not find User ID {target_id} in database."
+            return target_doc, None
+
+    # 3. No target found
+    return None, "No target"
 
 def is_protected(user_data):
     if "protection_expiry" not in user_data:
@@ -97,420 +146,305 @@ def is_protected(user_data):
     return user_data["protection_expiry"] > datetime.utcnow()
 
 def format_money(amount):
-    return f"{amount:,}"
+    return f"${amount:,}"
 
-def is_owner(user_id: int) -> bool:
-    return user_id == OWNER_ID
-
-def is_sudo(user_id: int) -> bool:
-    return user_id in SUDO_USERS or is_owner(user_id)
-
-# ============== UI PIECES ===================
-
-def make_main_keyboard():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("📢 Updates", url=SUPPORT_CHANNEL),
-                InlineKeyboardButton("👥 Support", url=SUPPORT_GROUP),
-            ],
-            [
-                InlineKeyboardButton("👑 Owner", url=OWNER_BUTTON_LINK),
-            ],
-        ]
-    )
-
-# ============== COMMANDS ====================
+# ================== USER COMMANDS ==================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    first = user.first_name
-
-    text = (
-        f"✨ Hey {first}, welcome to {BOT_NAME}!\n\n"
-        "💸 Fun coin game with kill / rob / protect / revive features.\n"
-        "🎁 Use /register if you want a one-time free bonus.\n\n"
-        "📚 Use /help to see all commands and details."
+    ensure_user_exists(update.effective_user)
+    msg = (
+        f"{HEADER_ART}\n\n"
+        f"✨ **Hey {update.effective_user.first_name}!**\n"
+        f"Welcome to {BOT_NAME}.\n\n"
+        f"📜 **Commands:**\n"
+        f"/register - Get {format_money(REGISTER_BONUS)} bonus\n"
+        f"/bal - Check balance (reply/mention to check others)\n"
+        f"/kill - Kill a user (Random reward $100-$200)\n"
+        f"/rob <amount> - Rob a user\n"
+        f"/protect 1d - Buy protection\n"
+        f"/revive - Revive yourself ($500)\n"
     )
-
-    await update.message.reply_text(
-        text,
-        reply_markup=make_main_keyboard(),
-    )
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "📚 ᴮᵃᵏᵃ ᴴᵉˡᵖ ᴹᵉⁿᵘ\n\n"
-        "👤 User Commands:\n"
-        "-  /start - Show welcome message & buttons\n"
-        "-  /help - Show this help\n"
-        "-  /register - Optional, get free 5,000 coins once\n"
-        "-  /bal - Check your stats & rank\n"
-        "-  /protect 1d|2d - Buy shield\n"
-        "-  /revive - Revive if dead\n"
-        "-  /kill (reply) - Kill a user\n"
-        "-  /rob <amount> (reply) - Rob coins from a user\n\n"
-        "👑 Owner / Sudo Commands:\n"
-        "-  /addcoins <id> <amount>\n"
-        "-  /removecoins <id> <amount>\n"
-        "-  /setcoins <id> <amount>\n"
-        "-  /userstats <id> - Check any user stats\n"
-    )
-    await update.message.reply_text(text, reply_markup=make_main_keyboard())
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    success = create_user(user.id, user.first_name)
+    user_id = update.effective_user.id
+    # Check manual existence to give bonus ONLY if new
+    existing = get_user(user_id)
+    
+    if existing:
+        await update.message.reply_text(f"{BOT_NAME}: ✨ You are already registered!")
+        return
 
-    if success:
-        msg = (
-            f"🎉 {user.first_name}, registration successful!\n"
-            f"💰 You got +{format_money(REGISTER_BONUS)} coins as bonus."
-        )
-    else:
-        msg = "✨ You are already registered and bonus was already claimed."
-    await update.message.reply_text(msg)
+    # Create new with bonus
+    new_user = {
+        "user_id": user_id,
+        "name": update.effective_user.first_name,
+        "username": update.effective_user.username.lower() if update.effective_user.username else None,
+        "balance": REGISTER_BONUS,
+        "kills": 0,
+        "status": "alive",
+        "protection_expiry": datetime.utcnow(),
+        "registered_at": datetime.utcnow(),
+    }
+    users_collection.insert_one(new_user)
+    await update.message.reply_text(f"{BOT_NAME}: 🎉 Registered! +{format_money(REGISTER_BONUS)} added.")
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tg_user = update.effective_user
-    user_data = ensure_user_exists(tg_user.id, tg_user.first_name)
+    # Try to resolve a target (reply/mention/id)
+    target_user, error = resolve_target(update, context)
+    
+    # If no target specified (args/reply), default to SELF
+    if not target_user and error == "No target":
+        target_user = ensure_user_exists(update.effective_user)
+    elif not target_user:
+        # If attempted to find target but failed (e.g. wrong ID)
+        await update.message.reply_text(error)
+        return
 
-    rank = users_collection.count_documents(
-        {"balance": {"$gt": user_data["balance"]}}
-    ) + 1
-
+    # Calculate rank
+    rank = users_collection.count_documents({"balance": {"$gt": target_user["balance"]}}) + 1
+    
     msg = (
-        f"👤 Name: {user_data['name']}\n"
-        f"💰 Balance: {format_money(user_data['balance'])}\n"
-        f"🏆 Global Rank: {rank}\n"
-        f"❤️ Status: {user_data['status']}\n"
-        f"⚔️ Kills: {user_data['kills']}"
+        f"{HEADER_ART}\n"
+        f"👤 **Name:** {target_user['name']}\n"
+        f"💰 **Balance:** {format_money(target_user['balance'])}\n"
+        f"🏆 **Rank:** {rank}\n"
+        f"❤️ **Status:** {target_user['status'].upper()}\n"
+        f"⚔️ **Kills:** {target_user['kills']}"
     )
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def protect(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tg_user = update.effective_user
-    user_data = ensure_user_exists(tg_user.id, tg_user.first_name)
-
+    user = ensure_user_exists(update.effective_user)
+    
     if not context.args:
-        await update.message.reply_text("⚠️ Usage: /protect 1d or /protect 2d")
+        await update.message.reply_text("⚠️ Usage: `/protect 1d` or `/protect 2d`", parse_mode="Markdown")
         return
 
-    duration = context.args.lower()
-    if duration == "1d":
-        cost = PROTECT_1D_COST
-        time_add = timedelta(days=1)
-    elif duration == "2d":
-        cost = PROTECT_2D_COST
-        time_add = timedelta(days=2)
+    duration = context.args[0].lower()
+    if duration == '1d':
+        cost, days = PROTECT_1D_COST, 1
+    elif duration == '2d':
+        cost, days = PROTECT_2D_COST, 2
     else:
-        await update.message.reply_text("⚠️ Invalid duration. Use 1d or 2d.")
+        await update.message.reply_text("⚠️ Invalid duration.")
         return
 
-    if is_protected(user_data):
-        await update.message.reply_text("🛡️ You are already protected right now.")
+    if is_protected(user):
+        await update.message.reply_text(f"{BOT_NAME}: 🛡️ You are already protected!")
         return
 
-    if user_data["balance"] < cost:
-        await update.message.reply_text(
-            f"❌ You need {format_money(cost)} coins to buy this shield."
-        )
+    if user['balance'] < cost:
+        await update.message.reply_text(f"{BOT_NAME}: ❌ You need {format_money(cost)}!")
         return
 
-    new_expiry = datetime.utcnow() + time_add
     users_collection.update_one(
-        {"user_id": user_data["user_id"]},
-        {"$inc": {"balance": -cost}, "$set": {"protection_expiry": new_expiry}},
+        {"user_id": user["user_id"]},
+        {
+            "$inc": {"balance": -cost},
+            "$set": {"protection_expiry": datetime.utcnow() + timedelta(days=days)}
+        }
     )
-
-    await update.message.reply_text(
-        f"🛡️ Shield activated for {duration}! -{format_money(cost)} coins."
-    )
+    await update.message.reply_text(f"{BOT_NAME}: 🛡️ Protected for {days} days.")
 
 async def revive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tg_user = update.effective_user
-    user_data = ensure_user_exists(tg_user.id, tg_user.first_name)
-
-    if user_data["status"] == "alive":
-        await update.message.reply_text("✨ You are already alive.")
+    user = ensure_user_exists(update.effective_user)
+    
+    if user['status'] == 'alive':
+        await update.message.reply_text(f"{BOT_NAME}: ✨ You are already alive!")
         return
 
-    if user_data["balance"] < REVIVE_COST:
-        await update.message.reply_text(
-            f"❌ You need {format_money(REVIVE_COST)} coins to revive."
-        )
+    if user['balance'] < REVIVE_COST:
+        await update.message.reply_text(f"{BOT_NAME}: ❌ You need {format_money(REVIVE_COST)} to revive.")
         return
 
     users_collection.update_one(
-        {"user_id": user_data["user_id"]},
-        {"$inc": {"balance": -REVIVE_COST}, "$set": {"status": "alive"}},
+        {"user_id": user["user_id"]},
+        {"$inc": {"balance": -REVIVE_COST}, "$set": {"status": "alive"}}
     )
-
-    await update.message.reply_text(
-        f"❤️ You revived yourself! -{format_money(REVIVE_COST)} coins."
-    )
+    await update.message.reply_text(f"{BOT_NAME}: ❤️ You revived yourself for {format_money(REVIVE_COST)}.")
 
 async def kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.reply_to_message:
-        await update.message.reply_text("⚠️ Reply to the user you want to kill with /kill.")
+    attacker = ensure_user_exists(update.effective_user)
+    
+    target, error = resolve_target(update, context)
+    if not target:
+        await update.message.reply_text(error if error != "No target" else "⚠️ usage: /kill <reply/mention/id>")
         return
 
-    attacker_tg = update.effective_user
-    target_msg = update.message.reply_to_message
-    target_tg = target_msg.from_user
-
-    attacker = ensure_user_exists(attacker_tg.id, attacker_tg.first_name)
-    target = ensure_user_exists(target_tg.id, target_tg.first_name)
-
-    if attacker["status"] == "dead":
-        await update.message.reply_text("💀 You are dead. Use /revive first.")
+    if attacker['status'] == 'dead':
+        await update.message.reply_text(f"{BOT_NAME}: 💀 You are dead! Revive first.")
         return
 
-    if target["user_id"] == attacker["user_id"]:
-        await update.message.reply_text("🤔 Why are you trying to kill yourself?")
+    if target['user_id'] == attacker['user_id']:
+        await update.message.reply_text("🤔 Suicidal?")
         return
 
-    if target["status"] == "dead":
+    if target['status'] == 'dead':
         await update.message.reply_text("⚰️ They are already dead.")
         return
 
     if is_protected(target):
-        await update.message.reply_text("🛡️ Target is protected, kill failed.")
+        await update.message.reply_text("🛡️ They are protected!")
         return
 
+    # LOGIC: Kill + Reward
+    kill_reward = random.randint(100, 200)
+    
+    users_collection.update_one({"user_id": target["user_id"]}, {"$set": {"status": "dead"}})
     users_collection.update_one(
-        {"user_id": target["user_id"]},
-        {"$set": {"status": "dead"}},
-    )
-    users_collection.update_one(
-        {"user_id": attacker["user_id"]},
-        {"$inc": {"kills": 1}},
+        {"user_id": attacker["user_id"]}, 
+        {
+            "$inc": {"kills": 1, "balance": kill_reward}
+        }
     )
 
     await update.message.reply_text(
-        f"🔪 {attacker_tg.first_name} killed {target_tg.first_name}! 🩸"
-    )
+        f"{HEADER_ART}\n"
+        f"🔪 You KILLED {target['name']}! 🩸\n"
+        f"💀 Their status is now DEAD.\n"
+        f"💵 You looted **{format_money(kill_reward)}** from their corpse!"
+    , parse_mode="Markdown")
 
 async def rob(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.reply_to_message:
-        await update.message.reply_text(
-            "⚠️ Reply to the user you want to rob with /rob <amount>."
-        )
+    attacker = ensure_user_exists(update.effective_user)
+    
+    # We need to parse Amount AND Target
+    # Patterns: 
+    # 1. Reply + /rob <amount>
+    # 2. /rob <amount> <mention/id>
+    
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ Usage: /rob <amount> <user>")
         return
 
-    robber_tg = update.effective_user
-    target_msg = update.message.reply_to_message
-    target_tg = target_msg.from_user
-
-    robber = ensure_user_exists(robber_tg.id, robber_tg.first_name)
-    target = ensure_user_exists(target_tg.id, target_tg.first_name)
-
-    if robber["status"] == "dead":
-        await update.message.reply_text("💀 You are dead. You can’t rob anyone.")
-        return
-
+    # Try to find amount first
     try:
-        amount = int(context.args)
-    except (IndexError, ValueError):
-        await update.message.reply_text("⚠️ Usage: /rob <amount> (replying to a user)")
+        amount = int(args[0])
+        # If targeting via text, the target is in args[1], so we remove args[0] for the resolver
+        if len(args) > 1:
+            context.args = args[1:] 
+        else:
+            context.args = [] # Rely on reply
+    except ValueError:
+        await update.message.reply_text("⚠️ First argument must be amount.")
         return
 
     if amount <= 0:
-        await update.message.reply_text("⚠️ Amount must be positive.")
+        await update.message.reply_text("⚠️ Invalid amount.")
         return
 
-    if target["user_id"] == robber["user_id"]:
-        await update.message.reply_text("😑 You can’t rob yourself.")
+    target, error = resolve_target(update, context)
+    if not target:
+        await update.message.reply_text(error if error != "No target" else "⚠️ Provide a target to rob.")
         return
 
-    if target["status"] == "dead":
-        await update.message.reply_text("⚰️ You can’t rob dead users.")
+    if attacker['status'] == 'dead':
+        await update.message.reply_text("💀 You are dead.")
+        return
+
+    if target['user_id'] == attacker['user_id']:
+        await update.message.reply_text("🤦‍♂️ Robbing yourself?")
+        return
+    
+    if target['status'] == 'dead':
+        await update.message.reply_text("⚰️ Can't rob the dead.")
         return
 
     if is_protected(target):
-        await update.message.reply_text("🛡️ They are protected. Rob failed.")
+        await update.message.reply_text("🛡️ Protected!")
         return
 
-    if target["balance"] < amount:
-        await update.message.reply_text("📉 They don’t have that many coins.")
+    if target['balance'] < amount:
+        await update.message.reply_text(f"📉 They only have {format_money(target['balance'])}.")
         return
 
-    # 50-50 chance
+    # 50% chance
     if random.choice([True, False]):
-        users_collection.update_one(
-            {"user_id": target["user_id"]},
-            {"$inc": {"balance": -amount}},
-        )
-        users_collection.update_one(
-            {"user_id": robber["user_id"]},
-            {"$inc": {"balance": amount}},
-        )
-        await update.message.reply_text(
-            f"💰 Success! You stole {format_money(amount)} coins from {target_tg.first_name}."
-        )
+        users_collection.update_one({"user_id": target["user_id"]}, {"$inc": {"balance": -amount}})
+        users_collection.update_one({"user_id": attacker["user_id"]}, {"$inc": {"balance": amount}})
+        await update.message.reply_text(f"💰 You stole {format_money(amount)} from {target['name']}!")
     else:
-        fine = max(1, int(amount * 0.1))
-        users_collection.update_one(
-            {"user_id": robber["user_id"]},
-            {"$inc": {"balance": -fine}},
-        )
-        await update.message.reply_text(
-            f"🚔 Police caught you! You paid {format_money(fine)} coins as a bribe."
-        )
+        fine = int(amount * 0.1)
+        users_collection.update_one({"user_id": attacker["user_id"]}, {"$inc": {"balance": -fine}})
+        await update.message.reply_text(f"🚔 Police caught you! You paid {format_money(fine)} fine.")
 
-# ============ OWNER / SUDO COMMANDS =================
+# ================== SUDO COMMANDS ==================
 
 async def addcoins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_sudo(update.effective_user.id):
-        return
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /addcoins <user_id> <amount>")
-        return
+    if update.effective_user.id not in SUDO_USERS: return
+
+    # Args: <amount> <target> OR Reply + <amount>
+    args = context.args
+    if not args: return await update.message.reply_text("Usage: /addcoins <amount> <target>")
+
     try:
-        uid = int(context.args)
-        amount = int(context.args)[1]
-    except ValueError:
-        await update.message.reply_text("Invalid arguments.")
-        return
+        amount = int(args[0])
+        if len(args) > 1: context.args = args[1:] # Shift args for resolver
+    except: return await update.message.reply_text("Invalid amount.")
 
-    user = ensure_user_exists(uid, str(uid))
-    users_collection.update_one(
-        {"user_id": user["user_id"]},
-        {"$inc": {"balance": amount}},
-    )
-    await update.message.reply_text(
-        f"👑 Added {format_money(amount)} coins to {user['name']} ({uid})."
-    )
+    target, error = resolve_target(update, context)
+    if not target: return await update.message.reply_text(error or "No target found.")
 
-async def removecoins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_sudo(update.effective_user.id):
-        return
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /removecoins <user_id> <amount>")
-        return
-    try:
-        uid = int(context.args)
-        amount = int(context.args)[1]
-    except ValueError:
-        await update.message.reply_text("Invalid arguments.")
-        return
+    users_collection.update_one({"user_id": target["user_id"]}, {"$inc": {"balance": amount}})
+    await update.message.reply_text(f"👑 Added {format_money(amount)} to {target['name']}.")
 
-    user = ensure_user_exists(uid, str(uid))
-    users_collection.update_one(
-        {"user_id": user["user_id"]},
-        {"$inc": {"balance": -amount}},
-    )
-    await update.message.reply_text(
-        f"👑 Removed {format_money(amount)} coins from {user['name']} ({uid})."
-    )
+async def freerevive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Sudo command to revive anyone for free.
+    Usage: /freerevive @user OR reply
+    """
+    if update.effective_user.id not in SUDO_USERS: return
+    
+    target, error = resolve_target(update, context)
+    if not target: return await update.message.reply_text(error or "Usage: /freerevive <target>")
 
-async def setcoins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_sudo(update.effective_user.id):
-        return
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /setcoins <user_id> <amount>")
-        return
-    try:
-        uid = int(context.args)
-        amount = int(context.args)[1]
-    except ValueError:
-        await update.message.reply_text("Invalid arguments.")
-        return
-
-    user = ensure_user_exists(uid, str(uid))
-    users_collection.update_one(
-        {"user_id": user["user_id"]},
-        {"$set": {"balance": amount}},
-    )
-    await update.message.reply_text(
-        f"👑 Set {user['name']} ({uid}) coins to {format_money(amount)}."
-    )
+    users_collection.update_one({"user_id": target["user_id"]}, {"$set": {"status": "alive"}})
+    await update.message.reply_text(f"👑 GOD MODE: {target['name']} has been revived for FREE! ✨")
 
 async def userstats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_sudo(update.effective_user.id):
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /userstats <user_id>")
-        return
-    try:
-        uid = int(context.args)
-    except ValueError:
-        await update.message.reply_text("Invalid user_id.")
-        return
-
-    user = get_user(uid)
-    if not user:
-        await update.message.reply_text("User not found in DB.")
-        return
-
-    rank = users_collection.count_documents(
-        {"balance": {"$gt": user["balance"]}}
-    ) + 1
-
-    msg = (
-        f"👤 ID: {uid}\n"
-        f"👤 Name: {user.get('name', 'Unknown')}\n"
-        f"💰 Balance: {format_money(user['balance'])}\n"
-        f"🏆 Rank: {rank}\n"
-        f"❤️ Status: {user['status']}\n"
-        f"⚔️ Kills: {user['kills']}"
-    )
-    await update.message.reply_text(msg)
-
-# ============== FALLBACK ====================
-
-async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Unknown command. Use /help to see commands.")
-
-# ============== MAIN ========================
-
-async def set_bot_commands(application):
-    commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("help", "Show help menu"),
-        BotCommand("register", "Register and get bonus coins"),
-        BotCommand("bal", "Check your balance & stats"),
-        BotCommand("protect", "Buy shield 1d/2d"),
-        BotCommand("revive", "Revive if you are dead"),
-        BotCommand("kill", "Kill a user (reply)"),
-        BotCommand("rob", "Rob coins (reply + amount)"),
-    ]
-    await application.bot.set_my_commands(commands)
-
-def main():
-    if not TOKEN:
-        print("Error: BOT_TOKEN not found.")
-        return
-
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Normal commands
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(CommandHandler("register", register))
-    application.add_handler(CommandHandler("bal", balance))
-    application.add_handler(CommandHandler("protect", protect))
-    application.add_handler(CommandHandler("revive", revive))
-    application.add_handler(CommandHandler("kill", kill))
-    application.add_handler(CommandHandler("rob", rob))
-
-    # Owner/Sudo commands
-    application.add_handler(CommandHandler("addcoins", addcoins))
-    application.add_handler(CommandHandler("removecoins", removecoins))
-    application.add_handler(CommandHandler("setcoins", setcoins))
-    application.add_handler(CommandHandler("userstats", userstats))
-
-    # Unknown
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
-
-    async def on_startup(app):
-        await set_bot_commands(app)
-
-    application.post_init = on_startup
-
-    print("Bot is running...")
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+    if update.effective_user.id not in SUDO_USERS: return
     
+    target, error = resolve_target(update, context)
+    if not target: return await update.message.reply_text(error or "Usage: /userstats <target>")
+
+    await update.message.reply_text(
+        f"🔍 **Deep Stats:**\nID: `{target['user_id']}`\nName: {target['name']}\nStatus: {target['status']}\nBal: {target['balance']}\nProtected: {is_protected(target)}",
+        parse_mode="Markdown"
+    )
+
+# ================== FAKE SERVER (RENDER) ==================
+
+app = Flask(__name__)
+@app.route('/')
+def health(): return "Baka Bot Alive"
+def run_flask(): app.run(host='0.0.0.0', port=PORT)
+
+# ================== MAIN ==================
+
+if __name__ == '__main__':
+    # Start Web Server for Render
+    Thread(target=run_flask).start()
+
+    if not TOKEN:
+        print("CRITICAL: BOT_TOKEN is missing.")
+    else:
+        app_bot = ApplicationBuilder().token(TOKEN).build()
+
+        # Handlers
+        app_bot.add_handler(CommandHandler("start", start))
+        app_bot.add_handler(CommandHandler("register", register))
+        app_bot.add_handler(CommandHandler("bal", balance))
+        app_bot.add_handler(CommandHandler("protect", protect))
+        app_bot.add_handler(CommandHandler("revive", revive))
+        app_bot.add_handler(CommandHandler("kill", kill))
+        app_bot.add_handler(CommandHandler("rob", rob))
+
+        # Sudo Handlers
+        app_bot.add_handler(CommandHandler("addcoins", addcoins))
+        app_bot.add_handler(CommandHandler("freerevive", freerevive))
+        app_bot.add_handler(CommandHandler("userstats", userstats))
+
+        print(f"Baka Bot Started on Port {PORT}...")
+        app_bot.run_polling()
