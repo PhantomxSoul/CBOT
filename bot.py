@@ -34,17 +34,17 @@ TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 PORT = int(os.environ.get("PORT", 5000))
 
-# Links
+# Image & Links
+START_IMG_URL = os.getenv("START_IMG_URL", "") # Optional: Link to an image
 SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "https://t.me/YourSupportGroup")
 SUPPORT_CHANNEL = os.getenv("SUPPORT_CHANNEL", "https://t.me/YourUpdateChannel")
 OWNER_LINK = os.getenv("OWNER_LINK", "https://t.me/YourOwnerUsername")
 
-# Logging Channel (New!)
-# Get this ID by forwarding a message from your channel to @userinfobot
+# Logger Setup (Renamed)
 try:
-    LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0").strip())
+    LOGGER_ID = int(os.getenv("LOGGER_ID", "0").strip())
 except:
-    LOG_CHANNEL_ID = 0
+    LOGGER_ID = 0
 
 # Permissions
 try:
@@ -173,19 +173,19 @@ def format_money(amount):
 def make_main_keyboard():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📢 𝐔𝐩𝐝𝐚𝐭𝐞𝐬", url=SUPPORT_CHANNEL),
-            InlineKeyboardButton("🌸 𝐒𝐮𝐩𝐩𝐨𝐫𝐭", url=SUPPORT_GROUP),
+            InlineKeyboardButton("📢 ᴜᴘᴅᴀᴛᴇs", url=SUPPORT_CHANNEL),
+            InlineKeyboardButton("💬 sᴜᴘᴘᴏʀᴛ", url=SUPPORT_GROUP),
         ],
         [
-            InlineKeyboardButton("👑 𝐎𝐰𝐧𝐞𝐫", url=OWNER_LINK),
+            InlineKeyboardButton("♛ ᴏᴡɴᴇʀ", url=OWNER_LINK),
         ]
     ])
 
 async def send_log(context: ContextTypes.DEFAULT_TYPE, text: str):
     """Sends logs to the configured channel."""
-    if LOG_CHANNEL_ID != 0:
+    if LOGGER_ID != 0:
         try:
-            await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=text, parse_mode=ParseMode.HTML)
+            await context.bot.send_message(chat_id=LOGGER_ID, text=text, parse_mode=ParseMode.HTML)
         except Exception as e:
             logger.error(f"Failed to log: {e}")
 
@@ -195,41 +195,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user_exists(user)
     
-    msg = (
+    caption = (
         f"👋 <b>Hiii</b> {get_mention(user)}! (⁠≧⁠▽⁠≦⁠)\n\n"
         f"✨ <b>Welcome to {BOT_NAME}!</b> ✨\n"
-        f"<i>I am a sassy, cute economy bot!</i> 🌸\n\n"
-        f"🎮 <b>Game Mode:</b>\n"
-        f"<code>/kill</code> • <code>/rob</code> • <code>/bal</code>\n\n"
-        f"📚 <b>Info:</b>\n"
-        f"Type <code>/help</code> for my diary!\n"
+        f"<i>I am your sassy economy manager!</i> 🌸\n\n"
+        f"🎮 <b>𝐆𝐚𝐦𝐞 𝐌𝐨𝐝𝐞:</b>\n"
+        f"‣ <code>/kill</code> • <code>/rob</code> • <code>/bal</code>\n\n"
+        f"📚 <b>𝐇𝐞𝐥𝐩:</b>\n"
+        f"Type <code>/help</code> to open my secret diary!\n"
     )
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=make_main_keyboard())
+
+    if START_IMG_URL and START_IMG_URL.startswith("http"):
+        try:
+            await update.message.reply_photo(photo=START_IMG_URL, caption=caption, parse_mode=ParseMode.HTML, reply_markup=make_main_keyboard())
+        except:
+            # Fallback if URL is invalid
+            await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=make_main_keyboard())
+    else:
+        await update.message.reply_text(caption, parse_mode=ParseMode.HTML, reply_markup=make_main_keyboard())
 
     # Log Start Usage
     log_text = (
-        f"🚀 <b>Bot Started By User</b>\n"
-        f"👤 <b>User:</b> {get_mention(user)}\n"
-        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+        f"🚀 <b>Bot Started</b>\n"
+        f"👤 <b>User:</b> {get_mention(user)} (`{user.id}`)\n"
         f"💬 <b>Chat:</b> {update.effective_chat.title} (`{update.effective_chat.id}`)"
     )
     await send_log(context, log_text)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
-        f"📚 <b>{BOT_NAME} Diary</b> 🌸\n\n"
-        f"👤 <b>User Commands:</b>\n"
-        f"✦ <code>/start</code> - Wake me up!\n"
-        f"✦ <code>/register</code> - Get {format_money(REGISTER_BONUS)} (One Time)\n"
-        f"✦ <code>/bal</code> - Check your pouch\n"
-        f"✦ <code>/ranking</code> - Who is the best?\n"
-        f"✦ <code>/kill</code> - Attack someone 🔪\n"
-        f"✦ <code>/rob</code> - Steal coins 💰\n"
-        f"✦ <code>/protect 1d</code> - Buy Shield 🛡️\n"
-        f"✦ <code>/revive</code> - Come back to life ✨\n\n"
-        f"👑 <b>Admin Stuff:</b>\n"
-        f"✦ <code>/sudo</code> - Secret commands\n"
-        f"✦ <code>/sudolist</code> - My Bosses\n"
+        f"📚 <b>{BOT_NAME} 𝐃𝐢𝐚𝐫𝐲</b> 🌸\n\n"
+        f"👤 <b>𝐔𝐬𝐞𝐫 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬:</b>\n"
+        f"✦ <code>/start</code> » Wake me up\n"
+        f"✦ <code>/register</code> » Get bonus {format_money(REGISTER_BONUS)}\n"
+        f"✦ <code>/bal</code> » Check pouch\n"
+        f"✦ <code>/ranking</code> » Global top list\n"
+        f"✦ <code>/kill</code> » Attack user 🔪\n"
+        f"✦ <code>/rob</code> » Steal coins 💰\n"
+        f"✦ <code>/protect 1d</code> » Buy Shield 🛡️\n"
+        f"✦ <code>/revive</code> » Revive life ✨\n\n"
+        f"👮 <b>𝐀𝐝𝐦𝐢𝐧 𝐙𝐨𝐧𝐞:</b>\n"
+        f"✦ <code>/sudo</code> » Secret Menu\n"
+        f"✦ <code>/sudolist</code> » Staff List\n"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
@@ -270,12 +277,12 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor_rich = users_collection.find().sort("balance", -1).limit(10)
-    rich_text = "💰 <b>Top 10 Richies:</b>\n"
+    rich_text = "💰 <b>𝐓𝐨𝐩 𝟏𝟎 𝐑𝐢𝐜𝐡𝐢𝐞𝐬:</b>\n"
     for i, doc in enumerate(cursor_rich, 1):
         rich_text += f"<code>{i}.</code> {get_mention(doc)}: <b>{format_money(doc['balance'])}</b>\n"
 
     cursor_kills = users_collection.find().sort("kills", -1).limit(10)
-    kill_text = "\n⚔️ <b>Top 10 Killers:</b>\n"
+    kill_text = "\n⚔️ <b>𝐓𝐨𝐩 𝟏𝟎 𝐊𝐢𝐥𝐥𝐞𝐫𝐬:</b>\n"
     for i, doc in enumerate(cursor_kills, 1):
         kill_text += f"<code>{i}.</code> {get_mention(doc)}: <b>{doc['kills']} Kills</b>\n"
 
@@ -352,24 +359,24 @@ async def rob(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users_collection.update_one({"user_id": attacker["user_id"]}, {"$inc": {"balance": -fine}})
         await update.message.reply_text(f"🚔 <b>Police!</b> {get_mention(attacker)} caught! Paid <b>{format_money(fine)}</b> fine.", parse_mode=ParseMode.HTML)
 
-# ================== 👑 SUDO/OWNER COMMANDS WITH CONFIRMATION ==================
+# ================== 👑 SUDO/OWNER COMMANDS ==================
 
 async def sudo_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in SUDO_USERS: return
     msg = (
-        "🔐 <b>Sudo Panel</b>\n\n"
-        "<code>/addcoins [amt] [user]</code>\n"
-        "<code>/freerevive [user]</code>\n"
-        "<code>/sudolist</code>\n\n"
-        "👑 <b>Owner:</b>\n"
-        "<code>/addsudo [user]</code>\n"
-        "<code>/rmsudo [user]</code>\n"
-        "<code>/cleandb</code>\n"
+        "🔐 <b>𝐒𝐮𝐝𝐨 𝐏𝐚𝐧𝐞𝐥</b>\n\n"
+        "‣ <code>/addcoins [amt] [user]</code>\n"
+        "‣ <code>/freerevive [user]</code>\n"
+        "‣ <code>/sudolist</code>\n\n"
+        "👑 <b>𝐎𝐰𝐧𝐞𝐫 𝐎𝐧𝐥𝐲:</b>\n"
+        "‣ <code>/addsudo [user]</code>\n"
+        "‣ <code>/rmsudo [user]</code>\n"
+        "‣ <code>/cleandb</code>\n"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 async def sudolist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "👑 <b>Owner & Sudoers:</b>\n\n"
+    msg = "👑 <b>𝐎𝐰𝐧𝐞𝐫 & 𝐒𝐮𝐝𝐨𝐞𝐫𝐬:</b>\n\n"
     owner_doc = get_user(OWNER_ID)
     msg += f"👑 {get_mention(owner_doc) if owner_doc else OWNER_ID} (Owner)\n"
     
@@ -385,8 +392,8 @@ async def sudolist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_confirm_keyboard(action, args_str):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Yes", callback_data=f"cnf|{action}|{args_str}"),
-            InlineKeyboardButton("❌ No", callback_data="cnf|cancel|0")
+            InlineKeyboardButton("✅ 𝐘𝐞𝐬", callback_data=f"cnf|{action}|{args_str}"),
+            InlineKeyboardButton("❌ 𝐍𝐨", callback_data="cnf|cancel|0")
         ]
     ])
 
@@ -436,7 +443,7 @@ async def freerevive(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cleandb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID: return
-    await ask_confirm(update, "<b>WIPE ENTIRE DATABASE?</b> 🗑️\nThis cannot be undone!", "cleandb", "0")
+    await ask_confirm(update, "<b>WIPE ENTIRE DATABASE?</b> 🗑️\nAll users will be deleted and can register again!", "cleandb", "0")
 
 # --- Callback Handler ---
 
@@ -479,7 +486,7 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "cleandb":
         users_collection.delete_many({})
-        await query.message.edit_text("🗑️ <b>DATABASE WIPED!</b> All gone.", parse_mode=ParseMode.HTML)
+        await query.message.edit_text("🗑️ <b>DATABASE WIPED!</b>\nAll data is gone. Users can now /register again.", parse_mode=ParseMode.HTML)
 
 # ================== 🕵️ LOGGING HANDLER ==================
 
@@ -494,7 +501,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if new_member.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
         invite_link = "No Link (Not Admin)"
         
-        # Try to get invite link if admin
         if new_member.status == ChatMember.ADMINISTRATOR:
             try:
                 link_obj = await context.bot.export_chat_invite_link(chat.id)
@@ -513,7 +519,7 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 app = Flask(__name__)
 @app.route('/')
-def health(): return "Baka Bot Cute Mode Alive"
+def health(): return "Baka Bot Premium Alive"
 def run_flask(): app.run(host='0.0.0.0', port=PORT)
 
 async def set_bot_commands(application):
@@ -531,11 +537,11 @@ async def set_bot_commands(application):
     await application.bot.set_my_commands(commands)
     
     # Startup Log
-    if LOG_CHANNEL_ID != 0:
+    if LOGGER_ID != 0:
         try:
             await application.bot.send_message(
-                LOG_CHANNEL_ID, 
-                f"🌟 <b>Baka Bot Started!</b>\nI am online and cute! (⁠≧⁠▽⁠≦⁠)", 
+                LOGGER_ID, 
+                f"🌟 <b>Baka Bot Started!</b>\nI am online and beautiful! (⁠≧⁠▽⁠≦⁠)", 
                 parse_mode=ParseMode.HTML
             )
         except: pass
