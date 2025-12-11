@@ -12,7 +12,6 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     Message, 
     CallbackQuery, 
-    ChatPermissions,
     BotCommand
 )
 
@@ -31,10 +30,25 @@ app = Client("baka_master", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKE
 # ---------------- DATABASE ---------------- #
 if not MONGO_URL:
     print("❌ CRITICAL: MONGO_URL MISSING")
-    
+    exit()
+
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo.baka_bot
 users_col = db.users
+
+# --- ITEM SHOP DATA ---
+SHOP_ITEMS = {
+    "rose": {"name": "Rose", "emoji": "🌹", "cost": 500},
+    "chocolate": {"name": "Chocolate", "emoji": "🍫", "cost": 800},
+    "ring": {"name": "Ring", "emoji": "💍", "cost": 2000},
+    "teddy": {"name": "Teddy Bear", "emoji": "🧸", "cost": 1500},
+    "pizza": {"name": "Pizza", "emoji": "🍕", "cost": 600},
+    "box": {"name": "Surprise Box", "emoji": "🎁", "cost": 2500},
+    "puppy": {"name": "Puppy", "emoji": "🐶", "cost": 3000},
+    "cake": {"name": "Cake", "emoji": "🎂", "cost": 1000},
+    "letter": {"name": "Love Letter", "emoji": "💌", "cost": 400},
+    "cat": {"name": "Cat", "emoji": "🐱", "cost": 2500},
+}
 
 async def get_user(user_id, name="User"):
     user = await users_col.find_one({"_id": user_id})
@@ -42,7 +56,7 @@ async def get_user(user_id, name="User"):
         user = {
             "_id": user_id, "name": name, "balance": 0, "status": "alive",
             "kills": 0, "premium": False, "last_daily": 0, "protected_until": 0,
-            "items": [], "games_enabled": True
+            "items": {} # Stores items like {"rose": 1, "ring": 2}
         }
         await users_col.insert_one(user)
     return user
@@ -55,11 +69,12 @@ async def log_event(text):
         try: await app.send_message(LOG_CHANNEL_ID, text, disable_web_page_preview=True)
         except: pass
 
-# ---------------- 1. CORE MENUS ---------------- #
+# ---------------- 1. MENUS & CORE ---------------- #
 
 @app.on_message(filters.command("start"))
 async def start_cmd(client, message: Message):
     await get_user(message.from_user.id, message.from_user.first_name)
+    
     if message.chat.type == ChatType.PRIVATE:
         await log_event(f"🚀 **User Started Bot**\n👤 {message.from_user.mention} (`{message.from_user.id}`)")
 
@@ -90,8 +105,7 @@ async def help_cmd(client, message: Message):
         "🛡️ **Admin Commands (.prefix only):**\n"
         ".warn, .mute, .ban, .kick, .pin, .del\n\n"
         "🎮 **Features**\n"
-        "Tap /economy for Money/Game commands.\n"
-        "Tap /start for Menu."
+        "Tap /economy for Money/Game commands."
     )
     await message.reply_text(txt)
 
@@ -100,13 +114,99 @@ async def economy_cmd(client, message: Message):
     txt = (
         "💰 **Baka Economy System Guide**\n\n"
         "🔹 **Normal Users (👤):**\n"
-        "/daily, /claim, /bal, /rob, /kill, /revive, /protect, /give, /toprich, /topkill\n\n"
+        "/daily, /claim, /bal, /rob, /kill, /revive, /protect, /give\n"
+        "/items, /gift, /toprich, /topkill\n\n"
         "🔹 **Premium Users (💖):**\n"
         "/pay, /daily ($2000), /rob ($100k limit), /check"
     )
     await message.reply_text(txt)
 
-# ---------------- 2. ECONOMY COMMANDS ---------------- #
+# ---------------- 2. ITEM SHOP LOGIC (NEW) ---------------- #
+
+@app.on_message(filters.command("items"))
+async def shop_list(client, message: Message):
+    txt = "📦 **Available Gift Items:**\n\n"
+    for key, item in SHOP_ITEMS.items():
+        txt += f"{item['emoji']} **{item['name']}** — ${item['cost']}\n"
+    await message.reply_text(txt)
+
+@app.on_message(filters.command("item"))
+async def my_items(client, message: Message):
+    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    user = await get_user(target.id, target.first_name)
+    
+    items = user.get("items", {})
+    if not items:
+        # EXACT TEXT FROM SCREENSHOT
+        return await message.reply_text(f"{target.mention} has no items yet 😢")
+    
+    txt = f"🎒 **{target.first_name}'s Items:**\n\n"
+    for key, count in items.items():
+        if count > 0:
+            meta = SHOP_ITEMS.get(key, {"name": key, "emoji": "❓"})
+            txt += f"{meta['emoji']} **{meta['name']}**: {count}\n"
+    await message.reply_text(txt)
+
+@app.on_message(filters.command("gift"))
+async def gift_item(client, message: Message):
+    if not message.reply_to_message:
+        return await message.reply_text("Reply to the user you want to gift!")
+    
+    try: item_name = message.command[1].lower()
+    except: return await message.reply_text("Usage: /gift rose (Reply to user)")
+    
+    # Match item name (allow "teddy" for "Teddy Bear")
+    item_key = None
+    for k in SHOP_ITEMS:
+        if k in item_name or item_name in k:
+            item_key = k
+            break
+            
+    if not item_key: return await message.reply_text("❌ Item not found! Check /items")
+    
+    sender = await get_user(message.from_user.id)
+    receiver = await get_user(message.reply_to_message.from_user.id)
+    cost = SHOP_ITEMS[item_key]["cost"]
+    
+    if sender['balance'] < cost:
+        return await message.reply_text(f"❌ You need ${cost} to buy this!")
+    
+    # Transaction
+    new_bal = sender['balance'] - cost
+    # Update Receiver Inventory
+    r_items = receiver.get("items", {})
+    r_items[item_key] = r_items.get(item_key, 0) + 1
+    
+    await update_user(sender['_id'], {"balance": new_bal})
+    await update_user(receiver['_id'], {"items": r_items})
+    
+    emoji = SHOP_ITEMS[item_key]["emoji"]
+    name = SHOP_ITEMS[item_key]["name"]
+    await message.reply_text(f"🎁 You gifted {emoji} **{name}** to {message.reply_to_message.from_user.mention}!")
+
+# ---------------- 3. ECONOMY COMMANDS ---------------- #
+
+@app.on_message(filters.command("revive"))
+async def revive(client, message: Message):
+    # Logic: If reply, revive target. If no reply, revive self.
+    if message.reply_to_message:
+        target_user = message.reply_to_message.from_user
+    else:
+        target_user = message.from_user
+        
+    target_data = await get_user(target_user.id)
+    payer_data = await get_user(message.from_user.id)
+    
+    # EXACT TEXT LOGIC
+    if target_data['status'] == "alive":
+        return await message.reply_text(f"✅ {target_user.mention} is already alive!")
+        
+    if payer_data['balance'] < 500:
+        return await message.reply_text(f"❌ You need $500 to revive!")
+        
+    await update_user(payer_data['_id'], {"balance": payer_data['balance'] - 500})
+    await update_user(target_data['_id'], {"status": "alive"})
+    await message.reply_text(f"❤️ Revived {target_user.mention}! (-$500)")
 
 @app.on_message(filters.command("daily"))
 async def daily(client, message: Message):
@@ -129,6 +229,7 @@ async def rob(client, message: Message):
     if not message.reply_to_message: return await message.reply_text("Reply to someone!")
     robber, victim = await get_user(message.from_user.id), await get_user(message.reply_to_message.from_user.id)
     if robber['status'] == "dead": return await message.reply_text("You are dead ☠️")
+    if victim['status'] == "dead": return await message.reply_text("They are already dead ☠️")
     if time.time() < victim['protected_until']: return await message.reply_text("🛡️ Protected!")
     
     limit = 100000 if robber['premium'] else 10000
@@ -156,15 +257,6 @@ async def kill(client, message: Message):
     await update_user(victim['_id'], {"status": "dead"})
     await update_user(killer['_id'], {"kills": killer['kills'] + 1})
     await message.reply_text("🔪 Killed successfully!")
-
-@app.on_message(filters.command("revive"))
-async def revive(client, message: Message):
-    target_id = message.reply_to_message.from_user.id if message.reply_to_message else message.from_user.id
-    payer = await get_user(message.from_user.id)
-    if payer['balance'] < 500: return await message.reply_text("❌ Need $500!")
-    await update_user(payer['_id'], {"balance": payer['balance'] - 500})
-    await update_user(target_id, {"status": "alive"})
-    await message.reply_text("❤️ Revived!")
 
 @app.on_message(filters.command("protect"))
 async def protect(client, message: Message):
@@ -201,16 +293,6 @@ async def toprich(client, message: Message):
         i += 1
     await message.reply_text(txt)
 
-@app.on_message(filters.command("topkill"))
-async def topkill(client, message: Message):
-    top = users_col.find().sort("kills", -1).limit(10)
-    txt = "⚔️ **Top Killers**\n\n"
-    i = 1
-    async for u in top:
-        txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
-        i += 1
-    await message.reply_text(txt)
-
 @app.on_message(filters.command("check"))
 async def check_prot(client, message: Message):
     user = await get_user(message.from_user.id)
@@ -229,43 +311,17 @@ async def claim(client, message: Message):
 async def pay(client, message: Message):
     await message.reply_text("💓 **Baka Premium**\nSend ID to @WTF_Phantom.\n\nID: `/id`")
 
-@app.on_message(filters.command(["item", "items", "gift"]))
-async def items_cmd(client, message: Message):
-    await message.reply_text("🎒 **Items:**\nStore coming soon! Use /economy to earn money first.")
+# ---------------- 3. FUN & GROUP LOGIC ---------------- #
 
-# ---------------- 3. FUN, GAMES & SOCIAL ---------------- #
-
-@app.on_message(filters.command("own"))
-async def own_sticker(client, message: Message):
-    await message.reply_text("🎨 **Create Stickers:** Send me an image and I'll make a sticker (Coming Soon).")
-
-@app.on_message(filters.command("open"))
-async def open_games(client, message: Message):
-    await message.reply_text("🎮 Gaming commands opened!")
-
-@app.on_message(filters.command("close"))
-async def close_games(client, message: Message):
-    await message.reply_text("🎮 Gaming commands closed!")
-
-@app.on_message(filters.command("music"))
-async def music_list(client, message: Message):
-    await message.reply_text("🎶 **Music List:**\n1. Starboy\n2. Mockingbird\n3. Bones")
-
-@app.on_message(filters.command("couples"))
-async def couples(client, message: Message):
-    if message.chat.type == ChatType.PRIVATE: return await message.reply_text("Groups only!")
-    await message.reply_text(f"💘 **Couple of the day:** {message.from_user.mention} ❤️ Baka")
-
-@app.on_message(filters.command(["crush", "love"]))
-async def love_calc(client, message: Message):
-    p = random.randint(0, 100)
-    await message.reply_text(f"❤️ **Love Percentage:** {p}%")
-
-@app.on_message(filters.command(["look", "brain", "stupid_meter"]))
+@app.on_message(filters.command(["stupid_meter", "brain", "look", "crush", "love"]))
 async def meters(client, message: Message):
+    # EXACT LOGIC: Group only check
+    if message.chat.type == ChatType.PRIVATE:
+        return await message.reply_text("🚫 You can use this command in groups only !")
+        
     p = random.randint(0, 100)
     cmd = message.command[0]
-    await message.reply_text(f"🧠 **{cmd.title()} Level:** {p}%")
+    await message.reply_text(f"📊 **{cmd.title()} Level:** {p}%")
 
 @app.on_message(filters.command(["slap", "punch", "bite", "kiss", "hug"]))
 async def actions(client, message: Message):
@@ -288,10 +344,6 @@ async def translate(client, message: Message):
     res = await asyncio.to_thread(ai_github, f"Translate to English: {message.reply_to_message.text}")
     await message.reply_text(f"🔤 **Translation:**\n{res}")
 
-@app.on_message(filters.command("detail"))
-async def detail(client, message: Message):
-    await message.reply_text("📜 No past username history found.")
-
 @app.on_message(filters.command("id"))
 async def id_cmd(client, message: Message):
     target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
@@ -303,38 +355,7 @@ async def adminlist(client, message: Message):
     admins = [m.user.mention async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.ADMINISTRATOR)]
     await message.reply_text("👮‍♂️ **Admins:**\n" + "\n".join(admins))
 
-@app.on_message(filters.command("owner"))
-async def owner_tag(client, message: Message):
-    if message.chat.type == ChatType.PRIVATE: return
-    async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.OWNER):
-        await message.reply_text(f"👑 **Owner:** {m.user.mention}")
-
-# ---------------- 4. ADMIN & SUDO ---------------- #
-
-@app.on_message(filters.command("sudo") & filters.user(OWNER_ID))
-async def sudo(client, message: Message):
-    await message.reply_text("👑 **Sudo:**\n/makepremium [id]\n/removepremium [id]\n/premiumlist\n/broadcast [reply]\n/status")
-
-@app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
-async def broadcast(client, message: Message):
-    if not message.reply_to_message: return
-    msg = await message.reply_text("📣 Sending...")
-    count = 0
-    async for u in users_col.find():
-        try:
-            await message.reply_to_message.copy(u['_id'])
-            count += 1
-        except: pass
-    await msg.edit_text(f"✅ Sent to {count} users.")
-
-@app.on_message(filters.command("status"))
-async def status(client, message: Message):
-    start = time.time()
-    msg = await message.reply_text("Checking...")
-    ping = int((time.time() - start) * 1000)
-    await msg.edit_text(f"📶 **Ping:** `{ping}ms`\n✅ **System:** Online")
-
-# ---------------- 5. AI ENGINE ---------------- #
+# ---------------- 4. AI ENGINE ---------------- #
 
 def ai_github(text):
     if not GITHUB_TOKEN: return None
@@ -367,13 +388,13 @@ async def chat_handler(client, message: Message):
         if not res: res = await asyncio.to_thread(ai_pollinations, message.text)
         await message.reply_text(res if res else "Server busy 😵‍💫")
 
-# ---------------- 6. STARTUP ---------------- #
+# ---------------- 5. STARTUP ---------------- #
 
 async def main():
     print("Bot Starting...")
     await app.start()
-    await log_event("✅ **Bot Deployed Successfully!**\n📅 System: Online\n🤖 Version: Ultimate Clone v2.0")
     
+    # FULL COMMAND LIST
     commands = [
         ("start", "Talk to Baka"), ("pay", "Buy premium access"), ("check", "Check protection"),
         ("daily", "Claim $1000 daily reward"), ("claim", "Add baka in groups and claim"),
