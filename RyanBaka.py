@@ -2,11 +2,8 @@ import os
 import time
 import random
 import asyncio
-import requests
-import urllib.parse
 from pyrogram import Client, filters, idle
-# CRITICAL: Importing Enums to fix the crash
-from pyrogram.enums import ChatType, ChatAction 
+from pyrogram.enums import ChatType, ChatAction
 from pyrogram.types import (
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
@@ -15,6 +12,8 @@ from pyrogram.types import (
     ChatPermissions,
     BotCommand
 )
+# AI Library
+from duckduckgo_search import DDGS
 
 # ---------------- CONFIGURATION ---------------- #
 API_ID = int(os.environ.get("API_ID"))
@@ -122,26 +121,19 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. AI CHATBOT (FIXED) ---------------- #
+# ---------------- 4. AI CHATBOT (DUCKDUCKGO GPT-4o) ---------------- #
 
 def get_ai_response(user_text):
     try:
-        # Persona
-        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. User says: "
+        # Define Persona
+        persona = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. User says: "
         
-        # Encoding
-        full_prompt = f"{system} {user_text}"
-        encoded_prompt = urllib.parse.quote(full_prompt)
-        
-        # API Call
-        url = f"https://text.pollinations.ai/{encoded_prompt}"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            return response.text
-        return None
+        # Call DuckDuckGo AI (GPT-4o Mini model)
+        # Note: This library handles the connection automatically
+        results = DDGS().chat(f"{persona} {user_text}", model='gpt-4o-mini')
+        return results
     except Exception as e:
-        print(f"AI API ERROR: {e}")
+        print(f"AI ERROR: {e}")
         return None
 
 @app.on_message(filters.text)
@@ -150,11 +142,9 @@ async def chat_handler(client, message: Message):
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # 2. Logic Check
+    # 2. Check Conditions
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
-    
-    # Check Reply
     is_reply = False
     if message.reply_to_message and message.reply_to_message.from_user:
         if message.reply_to_message.from_user.is_self:
@@ -163,16 +153,16 @@ async def chat_handler(client, message: Message):
     # 3. Process
     if is_private or is_mentioned or is_reply:
         try:
-            # FIX: Use Enum here instead of string "typing"
             await client.send_chat_action(message.chat.id, ChatAction.TYPING)
             
-            # Get Response
+            # Run AI in background thread
             reply = await asyncio.to_thread(get_ai_response, message.text)
             
             if reply:
                 await message.reply_text(reply)
             else:
-                await message.reply_text("Thinking... 🤔") 
+                # Fallback if DuckDuckGo blocks the IP
+                await message.reply_text("Server busy hai... thodi der baad try karna! 😵‍💫")
         except Exception as e:
             print(f"HANDLER CRASH: {e}")
 
