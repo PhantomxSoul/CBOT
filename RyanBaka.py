@@ -11,6 +11,7 @@ from pyrogram.types import (
     ChatPermissions,
     BotCommand
 )
+from openai import OpenAI
 
 # ---------------- CONFIGURATION ---------------- #
 API_ID = int(os.environ.get("API_ID"))
@@ -19,10 +20,23 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
 
+# ---------------- AI CONFIGURATION ---------------- #
+ai_client = OpenAI(
+    api_key="fake-key", 
+    base_url="https://text.pollinations.ai/"
+)
+
+# AI Persona: Sassy, Female, Hinglish
+SYSTEM_PROMPT = (
+    "You are Baka, a sassy and cute female Telegram bot. "
+    "You always reply in Hinglish (a mix of Hindi and English). "
+    "You are helpful but also playful, dramatic, and slightly roast users if they are being silly. "
+    "Use emojis frequently. Never admit you are an AI, act like a real anime character."
+)
+
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ---------------- MOCK DATABASE ---------------- #
-# Stores user data in memory. (Resets on restart)
 user_db = {}
 
 def get_user(user_id, name="User"):
@@ -56,7 +70,7 @@ async def start_command(client, message: Message):
 
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ 𝐓𝐚𝐥𝐤 𝐭𝐨 𝑩𝒂𝒌𝒂 💬", callback_data="talk_info")],
-        [InlineKeyboardButton("✨ 𝑭𝒓𝒊𝒆𝒏𝒅𝒔 🧸", callback_data="friends_info"),
+        [InlineKeyboardButton("✨ 𝑭𝒓𝒊𝒆𝒏𝒅𝒔 🧸", url="https://t.me/ShreyaBotSupport"),
          InlineKeyboardButton("✨ 𝑮𝒂𝒎𝒆𝒔 🎮", callback_data="games_info")],
         [InlineKeyboardButton("➕ Add me to your group 👥", url=f"https://t.me/{BOT_USERNAME}?startgroup=true")]
     ])
@@ -65,15 +79,12 @@ async def start_command(client, message: Message):
 @app.on_callback_query()
 async def callback_handler(client, query: CallbackQuery):
     if query.data == "talk_info":
-        await query.answer("Just send a message in the group! 💕", show_alert=True)
-    elif query.data == "friends_info":
-        await query.answer("Friend system coming soon! 🧸", show_alert=True)
+        await query.answer("To talk to me, just send me any message 💬✨", show_alert=True)
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
 
 @app.on_message(filters.command("economy"))
 async def economy_command(client, message: Message):
-    # EXACT TEXT AS REQUESTED
     txt = (
         "💰 **Baka Economy System Guide**\n\n"
         "💬 **How it works:**\n"
@@ -119,7 +130,6 @@ async def claim_cmd(client, message: Message):
     if user['claimed_group']:
         await message.reply_text("✨ You have already claimed the group bonus!")
         return
-    
     user['balance'] += 10000
     user['claimed_group'] = True
     await message.reply_text(f"🎉 **Bonus Claimed!**\nYou added Baka to the group and received **$10,000**! 💸")
@@ -128,11 +138,8 @@ async def claim_cmd(client, message: Message):
 async def bal_cmd(client, message: Message):
     user_id = message.reply_to_message.from_user.id if message.reply_to_message else message.from_user.id
     name = message.reply_to_message.from_user.first_name if message.reply_to_message else message.from_user.first_name
-    
     data = get_user(user_id, name)
-    # Mock rank for display
     rank = random.randint(1, 1000)
-    
     txt = (
         f"👤 Name: {data['name']}\n"
         f"💰 Total Balance: ${data['balance']}\n"
@@ -146,68 +153,34 @@ async def bal_cmd(client, message: Message):
 async def daily_cmd(client, message: Message):
     user = get_user(message.from_user.id, message.from_user.first_name)
     now = time.time()
-    
     if now - user['last_daily'] < 86400:
         hours = int((86400 - (now - user['last_daily'])) / 3600)
         await message.reply_text(f"⏳ Please wait {hours} hours!")
         return
-
     reward = 2000 if user['premium'] else 1000
     user['balance'] += reward
     user['last_daily'] = now
-
     if user['premium']:
          await message.reply_text(f"✅ You received: ${reward} daily reward! (Premium 🌟)")
     else:
-        await message.reply_text(
-            f"✅ You received: ${reward} daily reward!\n"
-            f"💓 Upgrade to premium using /pay to get $2000 daily reward!"
-        )
+        await message.reply_text(f"✅ You received: ${reward} daily reward!\n💓 Upgrade to premium using /pay to get $2000 daily reward!")
 
 @app.on_message(filters.command("rob"))
 async def rob_cmd(client, message: Message):
     if not message.reply_to_message:
         await message.reply_text("Reply to a user to rob them!")
         return
-
-    # Check if amount is specified
-    try:
-        amount_to_rob = int(message.command[1])
-    except:
-        amount_to_rob = 0 # If 0 or not specified, we try to rob max possible randomly
-
+    try: amount_to_rob = int(message.command[1])
+    except: amount_to_rob = 0 
     robber = get_user(message.from_user.id)
     victim = get_user(message.reply_to_message.from_user.id)
-
-    # Dead checks
-    if robber['status'] == "dead":
-        await message.reply_text("You are dead! ☠️")
-        return
-    if victim['status'] == "dead":
-        await message.reply_text("They are already dead ☠️")
-        return
-
-    # Protection check
-    if time.time() < victim['protected_until']:
-        await message.reply_text("🛡️ This user is protected!")
-        return
-
-    # Limits
+    if robber['status'] == "dead": return await message.reply_text("You are dead! ☠️")
+    if victim['status'] == "dead": return await message.reply_text("They are already dead ☠️")
+    if time.time() < victim['protected_until']: return await message.reply_text("🛡️ This user is protected!")
     max_limit = 100000 if robber['premium'] else 10000
-    
-    # If user didn't specify amount, or specified too high, cap it
-    if amount_to_rob <= 0 or amount_to_rob > max_limit:
-        amount_to_rob = random.randint(100, max_limit)
-
-    # Check victim balance
-    if victim['balance'] < amount_to_rob:
-        amount_to_rob = victim['balance']
-
-    if amount_to_rob <= 0:
-        await message.reply_text("They have no money! 🥺")
-        return
-
-    # Success/Fail Logic (50% Chance)
+    if amount_to_rob <= 0 or amount_to_rob > max_limit: amount_to_rob = random.randint(100, max_limit)
+    if victim['balance'] < amount_to_rob: amount_to_rob = victim['balance']
+    if amount_to_rob <= 0: return await message.reply_text("They have no money! 🥺")
     if random.choice([True, False]):
         victim['balance'] -= amount_to_rob
         robber['balance'] += amount_to_rob
@@ -219,100 +192,51 @@ async def rob_cmd(client, message: Message):
 
 @app.on_message(filters.command("kill"))
 async def kill_cmd(client, message: Message):
-    if not message.reply_to_message:
-        await message.reply_text("Reply to someone! 😈")
-        return
-    
+    if not message.reply_to_message: return await message.reply_text("Reply to someone! 😈")
     killer = get_user(message.from_user.id)
     victim = get_user(message.reply_to_message.from_user.id)
-    
-    if killer['status'] == "dead":
-        await message.reply_text("You are dead! /revive first.")
-        return
-    if victim['status'] == "dead":
-        await message.reply_text("They are already dead.")
-        return
-    if time.time() < victim['protected_until']:
-        await message.reply_text("🛡️ They are protected!")
-        return
-        
+    if killer['status'] == "dead": return await message.reply_text("You are dead! /revive first.")
+    if victim['status'] == "dead": return await message.reply_text("They are already dead.")
+    if time.time() < victim['protected_until']: return await message.reply_text("🛡️ They are protected!")
     victim['status'] = "dead"
     killer['kills'] += 1
     reward = random.randint(200, 400) if killer['premium'] else random.randint(100, 200)
     killer['balance'] += reward
-    
     await message.reply_text(f"⚠️ You killed {message.reply_to_message.from_user.first_name}!\nEarned: ${reward}\nThey are now dead.")
 
 @app.on_message(filters.command("revive"))
 async def revive_cmd(client, message: Message):
-    # Handles both self revive and reviving others
-    target_id = message.from_user.id
-    payer_id = message.from_user.id
-    
-    if message.reply_to_message:
-        target_id = message.reply_to_message.from_user.id
-        
+    target_id = message.reply_to_message.from_user.id if message.reply_to_message else message.from_user.id
+    payer = get_user(message.from_user.id)
     user = get_user(target_id)
-    payer = get_user(payer_id)
-
-    if user['status'] == "alive":
-        await message.reply_text(f"{'You are' if target_id == payer_id else 'They are'} already alive! ❤️")
-        return
-        
-    if payer['balance'] < 500:
-        await message.reply_text("❌ You need $500 to perform a revive!")
-        return
-        
+    if user['status'] == "alive": return await message.reply_text("Already alive! ❤️")
+    if payer['balance'] < 500: return await message.reply_text("❌ You need $500!")
     payer['balance'] -= 500
     user['status'] = "alive"
-    
-    if target_id == payer_id:
-        await message.reply_text("❤️ You revived yourself! -$500")
-    else:
-        await message.reply_text(f"❤️ You revived {message.reply_to_message.from_user.first_name}! -$500")
+    await message.reply_text("❤️ Revived! -$500")
 
 @app.on_message(filters.command("protect"))
 async def protect_cmd(client, message: Message):
-    if len(message.command) < 2:
-        await message.reply_text("⚠️ Usage: /protect 1d")
-        return
-        
+    if len(message.command) < 2: return await message.reply_text("⚠️ Usage: /protect 1d")
     duration = message.command[1]
     days_map = {"1d": 1, "2d": 2, "3d": 3}
-    
     if duration not in days_map: return
-    
-    # Premium check for >1d
     user = get_user(message.from_user.id)
-    if days_map[duration] > 1 and not user['premium']:
-        await message.reply_text("❌ Only Premium users can buy 2d or 3d protection!")
-        return
-        
+    if days_map[duration] > 1 and not user['premium']: return await message.reply_text("❌ Premium only!")
     cost = 2000 * days_map[duration]
-    
-    if user['balance'] < cost:
-        await message.reply_text(f"❌ You need ${cost}!")
-        return
-        
+    if user['balance'] < cost: return await message.reply_text(f"❌ You need ${cost}!")
     user['balance'] -= cost
     user['protected_until'] = time.time() + (86400 * days_map[duration])
-    await message.reply_text(f"🛡️ You are now protected for {duration}.")
+    await message.reply_text(f"🛡️ Protected for {duration}!")
 
 @app.on_message(filters.command("give"))
 async def give_cmd(client, message: Message):
-    if not message.reply_to_message or len(message.command) < 2:
-        await message.reply_text("Usage: /give [amount] (replying to user)")
-        return
+    if not message.reply_to_message or len(message.command) < 2: return await message.reply_text("Usage: /give [amount]")
     try: amount = int(message.command[1])
     except: return
-    
     sender = get_user(message.from_user.id)
     receiver = get_user(message.reply_to_message.from_user.id)
-    
-    if sender['balance'] < amount:
-        await message.reply_text("❌ Low balance.")
-        return
-        
+    if sender['balance'] < amount: return await message.reply_text("❌ Low balance.")
     tax = int(amount * (0.05 if sender['premium'] else 0.10))
     sender['balance'] -= amount
     receiver['balance'] += (amount - tax)
@@ -322,19 +246,51 @@ async def give_cmd(client, message: Message):
 async def toprich(client, message: Message):
     top = sorted(user_db.values(), key=lambda x: x['balance'], reverse=True)[:10]
     txt = "🏆 **Top Richest Users**\n\n"
-    for i, u in enumerate(top, 1):
-        txt += f"{i}. {u['name']} - ${u['balance']}\n"
+    for i, u in enumerate(top, 1): txt += f"{i}. {u['name']} - ${u['balance']}\n"
     await message.reply_text(txt)
 
 @app.on_message(filters.command("topkill"))
 async def topkill(client, message: Message):
     top = sorted(user_db.values(), key=lambda x: x['kills'], reverse=True)[:10]
     txt = "⚔️ **Top 10 Killers**\n\n"
-    for i, u in enumerate(top, 1):
-        txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
+    for i, u in enumerate(top, 1): txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
     await message.reply_text(txt)
 
-# ---------------- 3. PAYMENT & ADMIN ---------------- #
+# ---------------- 3. AI CHATBOT SYSTEM ---------------- #
+
+def get_ai_response(user_text):
+    try:
+        response = ai_client.chat.completions.create(
+            model="openai",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return "Are yaar, server error! 😵‍💫"
+
+@app.on_message(filters.text & ~filters.command)
+async def chat_handler(client, message: Message):
+    # CONDITIONS TO REPLY:
+    # 1. It is a Private Chat
+    # 2. OR It is a Group AND (Bot is mentioned OR Reply to Bot)
+    is_private = message.chat.type == "private"
+    is_mentioned = message.mentioned
+    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
+    
+    if is_private or is_mentioned or is_reply_to_bot:
+        # Send typing action...
+        await client.send_chat_action(message.chat.id, "typing")
+        
+        # Run AI in a separate thread to not block the bot
+        response_text = await asyncio.to_thread(get_ai_response, message.text)
+        
+        await message.reply_text(response_text)
+
+# ---------------- 4. ADMIN & PAYMENT ---------------- #
 
 @app.on_message(filters.command("pay"))
 async def pay_cmd(client, message: Message):
@@ -352,16 +308,11 @@ async def pay_cmd(client, message: Message):
 
 @app.on_message(filters.command("id"))
 async def id_cmd(client, message: Message):
-    txt = (
-        f"👤 **Your User ID:** `{message.from_user.id}`\n"
-        f"💬 **Chat ID:** `{message.chat.id}`"
-    )
-    await message.reply_text(txt)
+    await message.reply_text(f"👤 **Your User ID:** `{message.from_user.id}`\n💬 **Chat ID:** `{message.chat.id}`")
 
 @app.on_message(filters.command("makepremium") & filters.user(OWNER_ID))
 async def make_premium(client, message: Message):
     try:
-        if len(message.command) < 2: return
         target_id = int(message.command[1])
         if target_id not in user_db: get_user(target_id, "User")
         user_db[target_id]['premium'] = True
@@ -371,7 +322,6 @@ async def make_premium(client, message: Message):
 @app.on_message(filters.command("removepremium") & filters.user(OWNER_ID))
 async def remove_premium(client, message: Message):
     try:
-        if len(message.command) < 2: return
         target_id = int(message.command[1])
         if target_id in user_db:
             user_db[target_id]['premium'] = False
@@ -388,7 +338,7 @@ async def premium_list(client, message: Message):
             txt += f"{count}. [{data['name']}](tg://user?id={uid}) (`{uid}`)\n"
     await message.reply_text(txt if count > 0 else "No premium users found.")
 
-# ---------------- 4. DOT COMMANDS (ADMIN) ---------------- #
+# ---------------- 5. STARTUP ---------------- #
 
 async def check_admin(message):
     try:
@@ -396,50 +346,30 @@ async def check_admin(message):
         return member.status in ["administrator", "creator"]
     except: return False
 
-@app.on_message(filters.command("ban", prefixes=".") & filters.group)
-async def ban_user(client, message: Message):
+@app.on_message(filters.command(["ban", "mute", "unmute", "pin", "del"], prefixes=".") & filters.group)
+async def admin_cmds(client, message: Message):
     if not await check_admin(message) or not message.reply_to_message: return
+    cmd = message.command[0]
     try:
-        await client.ban_chat_member(message.chat.id, message.reply_to_message.from_user.id)
-        await message.reply_text("🚫 Banned!")
+        if cmd == "ban":
+            await client.ban_chat_member(message.chat.id, message.reply_to_message.from_user.id)
+            await message.reply_text("🚫 Banned!")
+        elif cmd == "mute":
+            await client.restrict_chat_member(message.chat.id, message.reply_to_message.from_user.id, ChatPermissions(can_send_messages=False))
+            await message.reply_text("🤐 Muted!")
+        elif cmd == "unmute":
+            await client.restrict_chat_member(message.chat.id, message.reply_to_message.from_user.id, ChatPermissions(can_send_messages=True))
+            await message.reply_text("🗣️ Unmuted!")
+        elif cmd == "pin":
+            await message.reply_to_message.pin()
+        elif cmd == "del":
+            await message.reply_to_message.delete()
+            await message.delete()
     except: pass
-
-@app.on_message(filters.command("mute", prefixes=".") & filters.group)
-async def mute_user(client, message: Message):
-    if not await check_admin(message) or not message.reply_to_message: return
-    try:
-        await client.restrict_chat_member(message.chat.id, message.reply_to_message.from_user.id, ChatPermissions(can_send_messages=False))
-        await message.reply_text("🤐 Muted!")
-    except: pass
-
-@app.on_message(filters.command("unmute", prefixes=".") & filters.group)
-async def unmute_user(client, message: Message):
-    if not await check_admin(message) or not message.reply_to_message: return
-    try:
-        await client.restrict_chat_member(message.chat.id, message.reply_to_message.from_user.id, ChatPermissions(can_send_messages=True))
-        await message.reply_text("🗣️ Unmuted!")
-    except: pass
-
-@app.on_message(filters.command("pin", prefixes=".") & filters.group)
-async def pin_msg(client, message: Message):
-    if not await check_admin(message) or not message.reply_to_message: return
-    try: await message.reply_to_message.pin()
-    except: pass
-
-@app.on_message(filters.command("del", prefixes=".") & filters.group)
-async def delete_msg(client, message: Message):
-    if not await check_admin(message) or not message.reply_to_message: return
-    try:
-        await message.reply_to_message.delete()
-        await message.delete()
-    except: pass
-
-# ---------------- 5. STARTUP SCRIPT ---------------- #
 
 async def main():
     print("Bot Starting...")
     async with app:
-        # Registers ALL commands in the "/" shortcut menu
         await app.set_bot_commands([
             BotCommand("start", "Start Bot"),
             BotCommand("help", "Help Menu"),
