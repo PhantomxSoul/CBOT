@@ -66,9 +66,7 @@ async def start_command(client, message: Message):
 @app.on_callback_query()
 async def callback_handler(client, query: CallbackQuery):
     if query.data == "talk_info":
-        # 1. Stop the loading animation
         await query.answer()
-        # 2. Send the message to the chat (Not as a popup)
         await query.message.reply_text("To talk to me, just send me any message 💬✨")
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
@@ -246,52 +244,7 @@ async def topkill(client, message: Message):
     for i, u in enumerate(top, 1): txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
     await message.reply_text(txt)
 
-# ---------------- 3. AI CHATBOT SYSTEM (FINAL FIX) ---------------- #
-
-def get_ai_response(user_text):
-    try:
-        # 1. Persona and Prompt Setup
-        system = "You are Baka, a sassy and cute female Telegram bot. Reply in Hinglish (Hindi + English). Act like a real person, use emojis. User says: "
-        full_prompt = f"{system} {user_text}"
-        
-        # 2. URL Encoding (CRITICAL FIX): Spaces must be converted to %20
-        # This prevents the request from failing on text with spaces.
-        encoded_prompt = urllib.parse.quote(full_prompt)
-        
-        # 3. Call the API
-        url = f"https://text.pollinations.ai/{encoded_prompt}"
-        response = requests.get(url, timeout=10) # 10 second timeout
-        
-        if response.status_code == 200:
-            return response.text
-        else:
-            return "Server busy hai yaar... (API Error) 😵‍💫"
-    except Exception as e:
-        print(f"AI Error: {e}")
-        return "Mera dimag kharab ho raha hai (Error) 😵‍💫"
-
-# Filter: Matches TEXT that does NOT start with / or .
-@app.on_message(filters.text)
-async def chat_handler(client, message: Message):
-    # Ignore commands manually to be safe
-    if message.text.startswith("/") or message.text.startswith("."):
-        return
-
-    # Decide when to reply
-    is_private = message.chat.type == "private"
-    is_mentioned = message.mentioned
-    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
-    
-    if is_private or is_mentioned or is_reply_to_bot:
-        try:
-            await client.send_chat_action(message.chat.id, "typing")
-            # Run AI in background so bot doesn't freeze
-            reply = await asyncio.to_thread(get_ai_response, message.text)
-            await message.reply_text(reply)
-        except Exception as e:
-            print(f"Handler Error: {e}")
-
-# ---------------- 4. ADMIN & PAYMENT ---------------- #
+# ---------------- 3. ADMIN & PAYMENT ---------------- #
 
 @app.on_message(filters.command("pay"))
 async def pay_cmd(client, message: Message):
@@ -339,7 +292,7 @@ async def premium_list(client, message: Message):
             txt += f"{count}. [{data['name']}](tg://user?id={uid}) (`{uid}`)\n"
     await message.reply_text(txt if count > 0 else "No premium users found.")
 
-# ---------------- 5. STARTUP ---------------- #
+# ---------------- 4. ADMIN DOT COMMANDS ---------------- #
 
 async def check_admin(message):
     try:
@@ -368,6 +321,44 @@ async def admin_cmds(client, message: Message):
             await message.delete()
     except: pass
 
+# ---------------- 5. AI CHATBOT SYSTEM (MOVED TO BOTTOM) ---------------- #
+# This must be the LAST handler so it doesn't intercept other commands
+
+def get_ai_response(user_text):
+    try:
+        # Persona Setup
+        system = "You are Baka, a sassy female bot. Reply in Hinglish. User says: "
+        # URL Encoding is CRITICAL here
+        encoded_prompt = urllib.parse.quote(f"{system} {user_text}")
+        url = f"https://text.pollinations.ai/{encoded_prompt}"
+        
+        response = requests.get(url, timeout=5) # 5s timeout to prevent lag
+        if response.status_code == 200:
+            return response.text
+        return "Server busy hai... 😵‍💫"
+    except:
+        return "Error 😵‍💫"
+
+@app.on_message(filters.text)
+async def chat_handler(client, message: Message):
+    # Double check it's not a command
+    if message.text.startswith("/") or message.text.startswith("."):
+        return
+
+    # Logic: Private Chat OR (Group AND (Mentioned OR Reply))
+    is_private = message.chat.type == "private"
+    is_mentioned = message.mentioned
+    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
+    
+    if is_private or is_mentioned or is_reply_to_bot:
+        try:
+            await client.send_chat_action(message.chat.id, "typing")
+            reply = await asyncio.to_thread(get_ai_response, message.text)
+            await message.reply_text(reply)
+        except: pass
+
+# ---------------- 6. STARTUP ---------------- #
+
 async def main():
     print("Bot Starting...")
     async with app:
@@ -387,7 +378,7 @@ async def main():
             BotCommand("topkill", "Top Killers"),
             BotCommand("pay", "Buy Premium"),
         ])
-        print("Bot is Alive & Commands Registered!")
+        print("Bot is Alive!")
         await idle()
 
 if __name__ == "__main__":
