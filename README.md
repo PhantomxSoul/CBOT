@@ -32,7 +32,7 @@
 <h3 align="center">🚀 Deploy On Heroku</h3>
 
 <p align="center">
-  <a href="https://dashboard.heroku.com/new?template=https://github.com/DevixOP/RyanBakaBot">
+  <a href="https://dashboard.heroku.com/new?template=https://github.com/DevixOP/BakaBot">
     <img src="https://img.shields.io/badge/⚡%20Deploy%20To%20Heroku-purple?style=for-the-badge&logo=heroku" width="250">
   </a>
 </p>
