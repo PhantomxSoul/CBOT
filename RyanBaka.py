@@ -14,7 +14,6 @@ from pyrogram.types import (
 from openai import OpenAI
 
 # ---------------- CONFIGURATION ---------------- #
-# Get these from Heroku Config Vars
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -79,7 +78,10 @@ async def start_command(client, message: Message):
 @app.on_callback_query()
 async def callback_handler(client, query: CallbackQuery):
     if query.data == "talk_info":
-        await query.answer("To talk to me, just send me any message 💬✨", show_alert=True)
+        # FIX: Answer query to stop loading animation
+        await query.answer()
+        # FIX: Send actual message instead of popup
+        await query.message.reply_text("To talk to me, just send me any message 💬✨")
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
 
@@ -256,7 +258,7 @@ async def topkill(client, message: Message):
     for i, u in enumerate(top, 1): txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
     await message.reply_text(txt)
 
-# ---------------- 3. AI CHATBOT SYSTEM ---------------- #
+# ---------------- 3. AI CHATBOT SYSTEM (FIXED) ---------------- #
 
 def get_ai_response(user_text):
     try:
@@ -270,18 +272,23 @@ def get_ai_response(user_text):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return "Are yaar, server error! 😵‍💫"
+        print(f"AI Error: {e}") # Print error to logs to debug
+        return "Are yaar, mood nahi hai abhi... (Server Error) 😵‍💫"
 
-# FIXED FILTER: Matches text that DOES NOT start with / or .
-@app.on_message(filters.text & ~filters.regex(r"^[/\.]"))
+# FIX: Removed the complex Regex filter.
+# We now use simple text filter and check prefix inside function.
+@app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # CONDITIONS TO REPLY:
-    # 1. It is a Private Chat
-    # 2. OR It is a Group AND (Bot is mentioned OR Reply to Bot)
+    # 1. Ignore commands (start with / or .)
+    if message.text.startswith("/") or message.text.startswith("."):
+        return
+
+    # 2. Logic to decide when to reply
     is_private = message.chat.type == "private"
     is_mentioned = message.mentioned
     is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
     
+    # Reply if: Private Chat OR (Group AND (Mentioned OR Reply))
     if is_private or is_mentioned or is_reply_to_bot:
         await client.send_chat_action(message.chat.id, "typing")
         response_text = await asyncio.to_thread(get_ai_response, message.text)
