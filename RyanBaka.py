@@ -1,7 +1,9 @@
 import os
 import time
+import random
 import asyncio
-import google.generativeai as genai
+import requests
+import urllib.parse
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatType, ChatAction
 from pyrogram.types import (
@@ -18,31 +20,6 @@ API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# ---------------- AI SETUP (MULTI-MODEL BACKUP) ---------------- #
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    # SAFETY: Disable filters so Baka can be sassy
-    SAFETY_SETTINGS = [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-    
-    # PRIORITY LIST: Try these models in order
-    # We use the models available in your provided list
-    MODEL_LIST = [
-        "models/gemini-2.5-flash",       # 1. Best & Newest
-        "models/gemini-2.0-flash",       # 2. Stable Backup
-        "models/gemini-2.0-flash-lite",  # 3. Lightweight Backup
-        "models/gemini-2.5-flash-lite"   # 4. Final Backup
-    ]
-else:
-    MODEL_LIST = []
-    print("⚠️ GEMINI_API_KEY MISSING")
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -143,42 +120,38 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. SMART AI ENGINE (AUTO-FALLBACK) ---------------- #
+# ---------------- 4. UNSTOPPABLE AI ENGINE ---------------- #
 
 def get_ai_response(user_text):
-    if not GEMINI_API_KEY:
-        return "⚠️ Error: GEMINI_API_KEY Missing!"
+    # Models to try in order (If one fails, try next)
+    models = ["openai", "mistral", "searchgpt", "qwen"]
     
-    persona = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. Keep replies short."
-    full_prompt = f"{persona}\nUser: {user_text}"
+    seed = random.randint(1, 999999) # Anti-cache
+    system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. Be savage, cute. User: "
     
-    # Try models one by one
-    for model_name in MODEL_LIST:
+    # 1. Clean Text
+    full_prompt = f"{system} {user_text}"
+    encoded_prompt = urllib.parse.quote(full_prompt)
+    
+    # 2. Try each model until one works
+    for model in models:
         try:
-            # Configure Model
-            model = genai.GenerativeModel(model_name, safety_settings=SAFETY_SETTINGS)
+            url = f"https://text.pollinations.ai/{encoded_prompt}?model={model}&seed={seed}"
+            response = requests.get(url, timeout=5)
             
-            # Generate Response
-            response = model.generate_content(full_prompt)
-            
-            # If successful, return text
-            if response.text:
+            if response.status_code == 200 and len(response.text) > 1:
                 return response.text
                 
-        except Exception as e:
-            # If 404 (Not Found) or other error, print and try next model
-            print(f"FAILED {model_name}: {e}")
-            continue # Try next model in list
+        except:
+            continue # Try next model
             
-    return "Oof, Google servers died! 😵‍💫 (All models failed)"
+    return "Dimag kharab ho gaya... server down hai! 😵‍💫"
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # Skip Commands
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # Logic
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = False
