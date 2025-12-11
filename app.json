@@ -1,43 +1,32 @@
 {
-  "name": "Baka Game Bot",
-  "description": "A Telegram bot with Economy, Kill, Rob and Protection systems using MongoDB.",
+  "name": "Baka Bot Clone",
+  "description": "A telegram bot clone with Economy, Killing, and Sassy features using Pyrogram.",
+  "logo": "https://cdn-icons-png.flaticon.com/512/4712/4712109.png",
   "keywords": [
     "telegram",
     "bot",
     "python",
-    "pymongo",
-    "game"
+    "pyrogram",
+    "baka"
   ],
-  "repository": "https://github.com/DevixOP/Baka",
-  "logo": "https://telegram.org/img/t_logo.png",
+  "repository": "https://github.com/your-username/your-repo-name",
+  "stack": "heroku-24",
   "env": {
+    "API_ID": {
+      "description": "Get this from https://my.telegram.org (API ID)",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Get this from https://my.telegram.org (API HASH)",
+      "required": true
+    },
     "BOT_TOKEN": {
-      "description": "The API Token from @BotFather",
+      "description": "Get this from @BotFather on Telegram",
       "required": true
     },
-    "MONGO_URI": {
-      "description": "Your MongoDB Atlas Connection String (mongodb+srv://...)",
+    "BOT_USERNAME": {
+      "description": "Your Bot's Username without @ (e.g. BakaCloneBot)",
       "required": true
-    },
-    "OWNER_ID": {
-      "description": "Telegram user ID of the bot owner (integer, no @).",
-      "required": true
-    },
-    "SUDO_IDS": {
-      "description": "Comma-separated Telegram user IDs for sudo users (e.g. \"12345,67890\"). Leave empty if none.",
-      "required": false
-    },
-    "SUPPORT_GROUP": {
-      "description": "Link to your Telegram support group (e.g. https://t.me/YourSupportGroup).",
-      "required": false
-    },
-    "SUPPORT_CHANNEL": {
-      "description": "Link to your Telegram updates channel (e.g. https://t.me/YourUpdateChannel).",
-      "required": false
-    },
-    "OWNER_LINK": {
-      "description": "Link to the owner contact (e.g. https://t.me/YourOwnerUsername).",
-      "required": false
     }
   },
   "buildpacks": [
