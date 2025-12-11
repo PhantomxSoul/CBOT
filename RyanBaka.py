@@ -12,6 +12,7 @@ from pyrogram.types import (
     InlineKeyboardButton, 
     Message, 
     CallbackQuery, 
+    ChatPermissions,
     BotCommand
 )
 
@@ -23,6 +24,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 MONGO_URL = os.environ.get("MONGO_URL")
+# Ensure LOG_CHANNEL_ID starts with -100
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", "0"))
 
 app = Client("baka_master", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -56,7 +58,7 @@ async def get_user(user_id, name="User"):
         user = {
             "_id": user_id, "name": name, "balance": 0, "status": "alive",
             "kills": 0, "premium": False, "last_daily": 0, "protected_until": 0,
-            "items": {} # Stores items like {"rose": 1, "ring": 2}
+            "items": {} 
         }
         await users_col.insert_one(user)
     return user
@@ -66,8 +68,11 @@ async def update_user(user_id, data):
 
 async def log_event(text):
     if LOG_CHANNEL_ID != 0:
-        try: await app.send_message(LOG_CHANNEL_ID, text, disable_web_page_preview=True)
-        except: pass
+        try:
+            await app.send_message(LOG_CHANNEL_ID, text, disable_web_page_preview=True)
+        except Exception as e:
+            # THIS WILL SHOW IN HEROKU LOGS IF IT FAILS
+            print(f"❌ LOG ERROR: {e}")
 
 # ---------------- 1. MENUS & CORE ---------------- #
 
@@ -75,8 +80,14 @@ async def log_event(text):
 async def start_cmd(client, message: Message):
     await get_user(message.from_user.id, message.from_user.first_name)
     
+    # Logger
     if message.chat.type == ChatType.PRIVATE:
-        await log_event(f"🚀 **User Started Bot**\n👤 {message.from_user.mention} (`{message.from_user.id}`)")
+        log_text = (
+            f"🚀 **User Started Bot**\n"
+            f"👤 {message.from_user.mention}\n"
+            f"🆔 `{message.from_user.id}`"
+        )
+        await log_event(log_text)
 
     txt = (
         f"✨ 𝐇𝐞𝐲 {message.from_user.mention} ~\n"
@@ -99,16 +110,6 @@ async def cb_handler(client, query: CallbackQuery):
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
 
-@app.on_message(filters.command("help"))
-async def help_cmd(client, message: Message):
-    txt = (
-        "🛡️ **Admin Commands (.prefix only):**\n"
-        ".warn, .mute, .ban, .kick, .pin, .del\n\n"
-        "🎮 **Features**\n"
-        "Tap /economy for Money/Game commands."
-    )
-    await message.reply_text(txt)
-
 @app.on_message(filters.command("economy"))
 async def economy_cmd(client, message: Message):
     txt = (
@@ -121,7 +122,17 @@ async def economy_cmd(client, message: Message):
     )
     await message.reply_text(txt)
 
-# ---------------- 2. ITEM SHOP LOGIC (NEW) ---------------- #
+@app.on_message(filters.command("help"))
+async def help_cmd(client, message: Message):
+    txt = (
+        "🛡️ **Admin Commands (.prefix only):**\n"
+        ".warn, .mute, .ban, .kick, .pin, .del\n\n"
+        "🎮 **Features**\n"
+        "Tap /economy for Money/Game commands."
+    )
+    await message.reply_text(txt)
+
+# ---------------- 2. ITEM SHOP & FUN ---------------- #
 
 @app.on_message(filters.command("items"))
 async def shop_list(client, message: Message):
@@ -137,7 +148,6 @@ async def my_items(client, message: Message):
     
     items = user.get("items", {})
     if not items:
-        # EXACT TEXT FROM SCREENSHOT
         return await message.reply_text(f"{target.mention} has no items yet 😢")
     
     txt = f"🎒 **{target.first_name}'s Items:**\n\n"
@@ -151,62 +161,54 @@ async def my_items(client, message: Message):
 async def gift_item(client, message: Message):
     if not message.reply_to_message:
         return await message.reply_text("Reply to the user you want to gift!")
-    
     try: item_name = message.command[1].lower()
     except: return await message.reply_text("Usage: /gift rose (Reply to user)")
     
-    # Match item name (allow "teddy" for "Teddy Bear")
     item_key = None
     for k in SHOP_ITEMS:
-        if k in item_name or item_name in k:
-            item_key = k
-            break
-            
+        if k in item_name: item_key = k; break
     if not item_key: return await message.reply_text("❌ Item not found! Check /items")
     
     sender = await get_user(message.from_user.id)
     receiver = await get_user(message.reply_to_message.from_user.id)
     cost = SHOP_ITEMS[item_key]["cost"]
     
-    if sender['balance'] < cost:
-        return await message.reply_text(f"❌ You need ${cost} to buy this!")
+    if sender['balance'] < cost: return await message.reply_text(f"❌ You need ${cost}!")
     
-    # Transaction
-    new_bal = sender['balance'] - cost
-    # Update Receiver Inventory
     r_items = receiver.get("items", {})
     r_items[item_key] = r_items.get(item_key, 0) + 1
     
-    await update_user(sender['_id'], {"balance": new_bal})
+    await update_user(sender['_id'], {"balance": sender['balance'] - cost})
     await update_user(receiver['_id'], {"items": r_items})
     
-    emoji = SHOP_ITEMS[item_key]["emoji"]
-    name = SHOP_ITEMS[item_key]["name"]
-    await message.reply_text(f"🎁 You gifted {emoji} **{name}** to {message.reply_to_message.from_user.mention}!")
+    await message.reply_text(f"🎁 You gifted {SHOP_ITEMS[item_key]['emoji']} to {message.reply_to_message.from_user.mention}!")
+
+@app.on_message(filters.command(["stupid_meter", "brain", "look", "crush", "love"]))
+async def fun_meters(client, message: Message):
+    # EXACT LOGIC: Group only
+    if message.chat.type == ChatType.PRIVATE:
+        return await message.reply_text("🚫 You can use this command in groups only !")
+        
+    p = random.randint(0, 100)
+    cmd = message.command[0]
+    await message.reply_text(f"📊 **{cmd.title()} Level:** {p}%")
 
 # ---------------- 3. ECONOMY COMMANDS ---------------- #
 
 @app.on_message(filters.command("revive"))
 async def revive(client, message: Message):
-    # Logic: If reply, revive target. If no reply, revive self.
-    if message.reply_to_message:
-        target_user = message.reply_to_message.from_user
-    else:
-        target_user = message.from_user
-        
-    target_data = await get_user(target_user.id)
-    payer_data = await get_user(message.from_user.id)
+    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    t_data = await get_user(target.id)
+    p_data = await get_user(message.from_user.id)
     
-    # EXACT TEXT LOGIC
-    if target_data['status'] == "alive":
-        return await message.reply_text(f"✅ {target_user.mention} is already alive!")
-        
-    if payer_data['balance'] < 500:
+    if t_data['status'] == "alive":
+        return await message.reply_text(f"✅ {target.mention} is already alive!")
+    if p_data['balance'] < 500:
         return await message.reply_text(f"❌ You need $500 to revive!")
         
-    await update_user(payer_data['_id'], {"balance": payer_data['balance'] - 500})
-    await update_user(target_data['_id'], {"status": "alive"})
-    await message.reply_text(f"❤️ Revived {target_user.mention}! (-$500)")
+    await update_user(p_data['_id'], {"balance": p_data['balance'] - 500})
+    await update_user(t_data['_id'], {"status": "alive"})
+    await message.reply_text(f"❤️ Revived {target.mention}!")
 
 @app.on_message(filters.command("daily"))
 async def daily(client, message: Message):
@@ -270,6 +272,13 @@ async def protect(client, message: Message):
     await update_user(user['_id'], {"balance": user['balance'] - cost, "protected_until": time.time() + (86400 * days)})
     await message.reply_text(f"🛡️ Protected for {message.command[1]}!")
 
+@app.on_message(filters.command("check"))
+async def check_prot(client, message: Message):
+    user = await get_user(message.from_user.id)
+    rem = user['protected_until'] - time.time()
+    if rem > 0: await message.reply_text(f"🛡️ Protected for {int(rem/3600)} hours.")
+    else: await message.reply_text("🛡️ No protection active.")
+
 @app.on_message(filters.command("give"))
 async def give(client, message: Message):
     if not message.reply_to_message: return
@@ -293,12 +302,15 @@ async def toprich(client, message: Message):
         i += 1
     await message.reply_text(txt)
 
-@app.on_message(filters.command("check"))
-async def check_prot(client, message: Message):
-    user = await get_user(message.from_user.id)
-    rem = user['protected_until'] - time.time()
-    if rem > 0: await message.reply_text(f"🛡️ Protected for {int(rem/3600)} hours.")
-    else: await message.reply_text("🛡️ No protection active.")
+@app.on_message(filters.command("topkill"))
+async def topkill(client, message: Message):
+    top = users_col.find().sort("kills", -1).limit(10)
+    txt = "⚔️ **Top Killers**\n\n"
+    i = 1
+    async for u in top:
+        txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
+        i += 1
+    await message.reply_text(txt)
 
 @app.on_message(filters.command("claim") & filters.group)
 async def claim(client, message: Message):
@@ -311,17 +323,21 @@ async def claim(client, message: Message):
 async def pay(client, message: Message):
     await message.reply_text("💓 **Baka Premium**\nSend ID to @WTF_Phantom.\n\nID: `/id`")
 
-# ---------------- 3. FUN & GROUP LOGIC ---------------- #
+# ---------------- 4. OPEN/CLOSE LOGIC ---------------- #
 
-@app.on_message(filters.command(["stupid_meter", "brain", "look", "crush", "love"]))
-async def meters(client, message: Message):
-    # EXACT LOGIC: Group only check
+@app.on_message(filters.command("open"))
+async def open_cmd(client, message: Message):
     if message.chat.type == ChatType.PRIVATE:
-        return await message.reply_text("🚫 You can use this command in groups only !")
-        
-    p = random.randint(0, 100)
-    cmd = message.command[0]
-    await message.reply_text(f"📊 **{cmd.title()} Level:** {p}%")
+        return await message.reply_text("❌ You can use these commands in groups only.")
+    await message.reply_text("✅ All economy commands have been enabled.")
+
+@app.on_message(filters.command("close"))
+async def close_cmd(client, message: Message):
+    if message.chat.type == ChatType.PRIVATE:
+        return await message.reply_text("❌ You can use these commands in groups only.")
+    await message.reply_text("🚫 All economy commands have been disabled.")
+
+# ---------------- 5. FUN & EXTRAS ---------------- #
 
 @app.on_message(filters.command(["slap", "punch", "bite", "kiss", "hug"]))
 async def actions(client, message: Message):
@@ -349,13 +365,13 @@ async def id_cmd(client, message: Message):
     target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
     await message.reply_text(f"🆔 **ID:** `{target.id}`")
 
-@app.on_message(filters.command("adminlist"))
-async def adminlist(client, message: Message):
+@app.on_message(filters.command("owner"))
+async def owner_tag(client, message: Message):
     if message.chat.type == ChatType.PRIVATE: return
-    admins = [m.user.mention async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.ADMINISTRATOR)]
-    await message.reply_text("👮‍♂️ **Admins:**\n" + "\n".join(admins))
+    async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.OWNER):
+        await message.reply_text(f"👑 **Owner:** {m.user.mention}")
 
-# ---------------- 4. AI ENGINE ---------------- #
+# ---------------- 6. AI ENGINE ---------------- #
 
 def ai_github(text):
     if not GITHUB_TOKEN: return None
@@ -388,13 +404,16 @@ async def chat_handler(client, message: Message):
         if not res: res = await asyncio.to_thread(ai_pollinations, message.text)
         await message.reply_text(res if res else "Server busy 😵‍💫")
 
-# ---------------- 5. STARTUP ---------------- #
+# ---------------- 7. STARTUP ---------------- #
 
 async def main():
     print("Bot Starting...")
     await app.start()
     
-    # FULL COMMAND LIST
+    # Send Deployment Log
+    await log_event(f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}")
+    
+    # 50+ COMMANDS LIST
     commands = [
         ("start", "Talk to Baka"), ("pay", "Buy premium access"), ("check", "Check protection"),
         ("daily", "Claim $1000 daily reward"), ("claim", "Add baka in groups and claim"),
