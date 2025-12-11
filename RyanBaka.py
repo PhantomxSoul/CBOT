@@ -2,6 +2,7 @@ import os
 import time
 import random
 import asyncio
+import requests
 from pyrogram import Client, filters, idle
 from pyrogram.types import (
     InlineKeyboardMarkup, 
@@ -11,7 +12,6 @@ from pyrogram.types import (
     ChatPermissions,
     BotCommand
 )
-from openai import OpenAI
 
 # ---------------- CONFIGURATION ---------------- #
 API_ID = int(os.environ.get("API_ID"))
@@ -19,19 +19,6 @@ API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
-
-# ---------------- AI CONFIGURATION ---------------- #
-ai_client = OpenAI(
-    api_key="fake-key", 
-    base_url="https://text.pollinations.ai/"
-)
-
-SYSTEM_PROMPT = (
-    "You are Baka, a sassy and cute female Telegram bot. "
-    "You always reply in Hinglish (a mix of Hindi and English). "
-    "You are helpful but also playful, dramatic, and slightly roast users if they are being silly. "
-    "Use emojis frequently. Never admit you are an AI, act like a real anime character."
-)
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -78,9 +65,9 @@ async def start_command(client, message: Message):
 @app.on_callback_query()
 async def callback_handler(client, query: CallbackQuery):
     if query.data == "talk_info":
-        # FIX: Answer query to stop loading animation
+        # Stops the button loading animation
         await query.answer()
-        # FIX: Send actual message instead of popup
+        # Sends a real message in the chat (Not a popup)
         await query.message.reply_text("To talk to me, just send me any message 💬✨")
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
@@ -258,41 +245,50 @@ async def topkill(client, message: Message):
     for i, u in enumerate(top, 1): txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
     await message.reply_text(txt)
 
-# ---------------- 3. AI CHATBOT SYSTEM (FIXED) ---------------- #
+# ---------------- 3. AI CHATBOT SYSTEM (FIXED & ROBUST) ---------------- #
 
 def get_ai_response(user_text):
     try:
-        response = ai_client.chat.completions.create(
-            model="openai",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=0.7
+        # Define the persona
+        system_prompt = (
+            "You are Baka, a sassy and cute female Telegram bot. "
+            "Reply in Hinglish (Hindi + English). "
+            "Be helpful but playful and dramatic. "
+            "User says: "
         )
-        return response.choices[0].message.content
+        # Using simple requests instead of complex OpenAI wrapper
+        # The Pollinations API works by appending the prompt to the URL
+        prompt = f"{system_prompt} {user_text}"
+        response = requests.get(f"https://text.pollinations.ai/{prompt}")
+        
+        if response.status_code == 200:
+            return response.text
+        else:
+            return "Server busy hai yaar... baad mein baat karte hain! 😴"
     except Exception as e:
-        print(f"AI Error: {e}") # Print error to logs to debug
-        return "Are yaar, mood nahi hai abhi... (Server Error) 😵‍💫"
+        print(f"AI Error: {e}")
+        return "Mera dimag kharab ho raha hai (Error) 😵‍💫"
 
-# FIX: Removed the complex Regex filter.
-# We now use simple text filter and check prefix inside function.
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # 1. Ignore commands (start with / or .)
+    # 1. IGNORE commands (messages starting with / or .)
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # 2. Logic to decide when to reply
+    # 2. DECIDE when to reply
     is_private = message.chat.type == "private"
-    is_mentioned = message.mentioned
+    is_mentioned = message.mentioned # True if someone types @Baka
     is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
     
-    # Reply if: Private Chat OR (Group AND (Mentioned OR Reply))
+    # 3. REPLY CONDITION
     if is_private or is_mentioned or is_reply_to_bot:
-        await client.send_chat_action(message.chat.id, "typing")
-        response_text = await asyncio.to_thread(get_ai_response, message.text)
-        await message.reply_text(response_text)
+        try:
+            await client.send_chat_action(message.chat.id, "typing")
+            # Run the AI request in background thread to prevent bot lagging
+            reply = await asyncio.to_thread(get_ai_response, message.text)
+            await message.reply_text(reply)
+        except Exception as e:
+            print(f"Chat Handler Error: {e}")
 
 # ---------------- 4. ADMIN & PAYMENT ---------------- #
 
