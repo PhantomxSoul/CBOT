@@ -5,6 +5,7 @@ import asyncio
 import requests
 import urllib.parse
 from pyrogram import Client, filters, idle
+from pyrogram.enums import ChatType  # <--- CRITICAL IMPORT
 from pyrogram.types import (
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
@@ -48,11 +49,13 @@ def get_user(user_id, name="User"):
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
     get_user(message.from_user.id, message.from_user.first_name)
+    
     txt = (
         f"✨ 𝐇𝐞𝐲 {message.from_user.mention} ~\n"
         f"𖦹 𝒀𝒐𝒖'𝒓𝒆 𝒕𝒂𝒍𝒌𝒊𝒏𝒈 𝒕𝒐 𝑩𝒂𝒌𝒂, 𝒂 𝒔𝒂𝒔𝒔𝒚 𝒄𝒖𝒕𝒊𝒆 𝒃𝒐𝒕 💕\n\n"
         f"𖥔 Choose an option below:"
     )
+
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ 𝐓𝐚𝐥𝐤 𝐭𝐨 𝑩𝒂𝒌𝒂 💬", callback_data="talk_info")],
         [InlineKeyboardButton("✨ 𝑭𝒓𝒊𝒆𝒏𝒅𝒔 🧸", url="https://t.me/ShreyaBotSupport"),
@@ -104,13 +107,15 @@ async def bal_cmd(client, message: Message):
     data = get_user(user_id, message.from_user.first_name)
     await message.reply_text(f"💰 Balance: ${data['balance']}")
 
+# ---------------- 3. ADMIN & PAYMENT ---------------- #
+
 @app.on_message(filters.command("pay"))
 async def pay_cmd(client, message: Message):
     txt = (
         "💓 **Baka Premium Access Link**\n\n"
         "👇 **Important Note:**\n"
         "Send your ID to @WTF_Phantom after payment.\n\n"
-        "Your ID: `/id`"
+        f"Your ID: `/id`" # Fixed missing f-string
     )
     await message.reply_text(txt)
 
@@ -118,26 +123,15 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 3. ADMIN COMMANDS ---------------- #
-
-@app.on_message(filters.command("makepremium") & filters.user(OWNER_ID))
-async def make_premium(client, message: Message):
-    try:
-        target = int(message.command[1])
-        get_user(target)
-        user_db[target]['premium'] = True
-        await message.reply_text(f"✅ User {target} is now Premium!")
-    except: pass
-
-# ---------------- 4. AI CHATBOT (DEBUG MODE) ---------------- #
+# ---------------- 4. AI CHATBOT (FIXED) ---------------- #
 
 def get_ai_response(user_text):
     try:
-        print(f"DEBUG: Generating AI response for: {user_text}") # LOG CHECK
+        print(f"DEBUG: Generating AI response for: {user_text}")
         
-        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi+English). Be savage but cute. User says: "
+        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. Be savage but cute. User says: "
         
-        # URL Encode the text
+        # FIX: Encode properly
         full_prompt = f"{system} {user_text}"
         encoded_prompt = urllib.parse.quote(full_prompt)
         
@@ -146,13 +140,11 @@ def get_ai_response(user_text):
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
-            print("DEBUG: AI Response received successfully") # LOG CHECK
+            print("DEBUG: Success")
             return response.text
-        else:
-            print(f"DEBUG: API Error {response.status_code}") # LOG CHECK
-            return "Server busy hai... 😵‍💫"
+        return "Server busy... 😵‍💫"
     except Exception as e:
-        print(f"DEBUG: AI Function Error: {e}") # LOG CHECK
+        print(f"DEBUG: AI Error: {e}")
         return "Error 😵‍💫"
 
 @app.on_message(filters.text)
@@ -161,14 +153,14 @@ async def chat_handler(client, message: Message):
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # 2. DEBUG PRINT - IF YOU DON'T SEE THIS IN LOGS, PRIVACY MODE IS ON
-    print(f"DEBUG: Message received from {message.from_user.first_name}: {message.text}")
+    print(f"DEBUG: Checking message type for: {message.text}")
 
-    # 3. Logic to reply
-    is_private = message.chat.type == "private"
+    # 2. FIXED LOGIC using ChatType
+    is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
     
+    # 3. Trigger if ANY condition matches
     if is_private or is_mentioned or is_reply_to_bot:
         try:
             await client.send_chat_action(message.chat.id, "typing")
