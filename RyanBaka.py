@@ -14,6 +14,7 @@ from pyrogram.types import (
 from openai import OpenAI
 
 # ---------------- CONFIGURATION ---------------- #
+# Get these from Heroku Config Vars
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -26,7 +27,6 @@ ai_client = OpenAI(
     base_url="https://text.pollinations.ai/"
 )
 
-# AI Persona: Sassy, Female, Hinglish
 SYSTEM_PROMPT = (
     "You are Baka, a sassy and cute female Telegram bot. "
     "You always reply in Hinglish (a mix of Hindi and English). "
@@ -272,7 +272,8 @@ def get_ai_response(user_text):
     except Exception as e:
         return "Are yaar, server error! 😵‍💫"
 
-@app.on_message(filters.text & ~filters.command)
+# FIXED FILTER: Matches text that DOES NOT start with / or .
+@app.on_message(filters.text & ~filters.regex(r"^[/\.]"))
 async def chat_handler(client, message: Message):
     # CONDITIONS TO REPLY:
     # 1. It is a Private Chat
@@ -282,12 +283,8 @@ async def chat_handler(client, message: Message):
     is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
     
     if is_private or is_mentioned or is_reply_to_bot:
-        # Send typing action...
         await client.send_chat_action(message.chat.id, "typing")
-        
-        # Run AI in a separate thread to not block the bot
         response_text = await asyncio.to_thread(get_ai_response, message.text)
-        
         await message.reply_text(response_text)
 
 # ---------------- 4. ADMIN & PAYMENT ---------------- #
