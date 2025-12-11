@@ -18,16 +18,25 @@ API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") # Get this from aistudio.google.com
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# ---------------- AI SETUP ---------------- #
+# ---------------- AI SETUP (UNCENSORED) ---------------- #
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using the fast and free Flash model
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # SAFETY SETTINGS: BLOCK_NONE allows the bot to be sassy/savage
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+    
+    # Using Flash model (Fastest & Free)
+    model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
 else:
     model = None
-    print("⚠️ WARNING: GEMINI_API_KEY not found in Heroku Config Vars!")
+    print("⚠️ GEMINI_API_KEY MISSING")
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -128,30 +137,35 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. GOOGLE GEMINI CHATBOT ---------------- #
+# ---------------- 4. GOOGLE GEMINI CHATBOT (DEBUG MODE) ---------------- #
 
 def get_ai_response(user_text):
     if not model:
-        return "Configure GEMINI_API_KEY in Heroku Settings first! ⚠️"
+        return "⚠️ Error: GEMINI_API_KEY is missing in Heroku Config Vars!"
     
     try:
-        # Persona Injection
         persona = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. Keep replies short."
         full_prompt = f"{persona}\nUser: {user_text}"
         
         response = model.generate_content(full_prompt)
+        
+        # Check if response was blocked
+        if not response.text:
+            return "⚠️ Error: Message blocked by Safety Filter."
+            
         return response.text
     except Exception as e:
-        print(f"GEMINI ERROR: {e}")
-        return "Oof, error aa gaya! 😵‍💫"
+        # RETURN THE ACTUAL ERROR TO THE USER
+        error_msg = str(e)
+        if "400" in error_msg:
+            return "⚠️ Error: API Key is Invalid. Check Heroku Config Vars."
+        return f"⚠️ System Error: {error_msg}"
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # 1. Skip Commands
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # 2. Logic
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = False
@@ -159,15 +173,10 @@ async def chat_handler(client, message: Message):
         if message.reply_to_message.from_user.is_self:
             is_reply = True
 
-    # 3. Process
     if is_private or is_mentioned or is_reply:
         try:
             await client.send_chat_action(message.chat.id, ChatAction.TYPING)
-            
-            # Using standard blocking call because Gemini is super fast
-            # but wrapping in thread just in case
             reply = await asyncio.to_thread(get_ai_response, message.text)
-            
             await message.reply_text(reply)
         except Exception as e:
             print(f"HANDLER CRASH: {e}")
