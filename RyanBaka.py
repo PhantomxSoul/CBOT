@@ -5,7 +5,6 @@ import asyncio
 import requests
 import urllib.parse
 from pyrogram import Client, filters, idle
-from pyrogram.enums import ChatType  # <--- CRITICAL IMPORT
 from pyrogram.types import (
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
@@ -49,13 +48,11 @@ def get_user(user_id, name="User"):
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
     get_user(message.from_user.id, message.from_user.first_name)
-    
     txt = (
         f"✨ 𝐇𝐞𝐲 {message.from_user.mention} ~\n"
         f"𖦹 𝒀𝒐𝒖'𝒓𝒆 𝒕𝒂𝒍𝒌𝒊𝒏𝒈 𝒕𝒐 𝑩𝒂𝒌𝒂, 𝒂 𝒔𝒂𝒔𝒔𝒚 𝒄𝒖𝒕𝒊𝒆 𝒃𝒐𝒕 💕\n\n"
         f"𖥔 Choose an option below:"
     )
-
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ 𝐓𝐚𝐥𝐤 𝐭𝐨 𝑩𝒂𝒌𝒂 💬", callback_data="talk_info")],
         [InlineKeyboardButton("✨ 𝑭𝒓𝒊𝒆𝒏𝒅𝒔 🧸", url="https://t.me/ShreyaBotSupport"),
@@ -115,7 +112,7 @@ async def pay_cmd(client, message: Message):
         "💓 **Baka Premium Access Link**\n\n"
         "👇 **Important Note:**\n"
         "Send your ID to @WTF_Phantom after payment.\n\n"
-        f"Your ID: `/id`" # Fixed missing f-string
+        f"Your ID: `/id`"
     )
     await message.reply_text(txt)
 
@@ -123,51 +120,62 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. AI CHATBOT (FIXED) ---------------- #
+# ---------------- 4. AI CHATBOT (SUPER DEBUG VERSION) ---------------- #
 
 def get_ai_response(user_text):
     try:
-        print(f"DEBUG: Generating AI response for: {user_text}")
+        # Simple persona
+        system = "You are Baka, a sassy female bot. Reply in Hinglish. User says: "
         
-        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. Be savage but cute. User says: "
+        # 1. CLEAN TEXT: Remove emojis or weird chars that might break the URL
+        safe_text = urllib.parse.quote(f"{system} {user_text}")
         
-        # FIX: Encode properly
-        full_prompt = f"{system} {user_text}"
-        encoded_prompt = urllib.parse.quote(full_prompt)
-        
-        # Pollinations API
-        url = f"https://text.pollinations.ai/{encoded_prompt}"
+        # 2. CALL API
+        url = f"https://text.pollinations.ai/{safe_text}"
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
-            print("DEBUG: Success")
             return response.text
-        return "Server busy... 😵‍💫"
+        return None
     except Exception as e:
-        print(f"DEBUG: AI Error: {e}")
-        return "Error 😵‍💫"
+        print(f"AI API ERROR: {e}")
+        return None
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # 1. Ignore commands
+    # 1. Skip Commands
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    print(f"DEBUG: Checking message type for: {message.text}")
-
-    # 2. FIXED LOGIC using ChatType
-    is_private = message.chat.type == ChatType.PRIVATE
-    is_mentioned = message.mentioned
-    is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
+    # 2. ROBUST LOGIC (String Checks)
+    # Check if Private Chat
+    is_private = str(message.chat.type) == "ChatType.PRIVATE"
     
-    # 3. Trigger if ANY condition matches
-    if is_private or is_mentioned or is_reply_to_bot:
+    # Check if Mentioned (e.g. @Baka_Bot)
+    is_mentioned = message.mentioned
+    
+    # Check if Reply to Bot
+    is_reply = False
+    if message.reply_to_message and message.reply_to_message.from_user:
+        if message.reply_to_message.from_user.is_self: # is_self checks if it's the bot
+            is_reply = True
+
+    # DEBUG PRINTS - Check your Heroku logs for these lines!
+    print(f"DEBUG LOG -> Msg: {message.text} | Private: {is_private} | Mentioned: {is_mentioned} | Reply: {is_reply}")
+
+    # 3. REPLY IF ANY IS TRUE
+    if is_private or is_mentioned or is_reply:
         try:
             await client.send_chat_action(message.chat.id, "typing")
             reply = await asyncio.to_thread(get_ai_response, message.text)
-            await message.reply_text(reply)
+            
+            if reply:
+                await message.reply_text(reply)
+            else:
+                # If API fails, send a backup message so we know code worked
+                await message.reply_text("... (thinking)") 
         except Exception as e:
-            print(f"DEBUG: Handler Error: {e}")
+            print(f"HANDLER CRASH: {e}")
 
 # ---------------- 5. STARTUP ---------------- #
 
