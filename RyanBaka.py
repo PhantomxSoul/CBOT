@@ -11,7 +11,7 @@ from pyrogram.types import (
     ChatPermissions,
     BotCommand
 )
-# We use this library instead of OpenAI/Pollinations
+# New Library for AI
 from duckduckgo_search import DDGS
 
 # ---------------- CONFIGURATION ---------------- #
@@ -321,29 +321,32 @@ async def admin_cmds(client, message: Message):
             await message.delete()
     except: pass
 
-# ---------------- 5. DUCKDUCKGO AI CHATBOT (NO API KEY) ---------------- #
-# This must be the LAST handler.
+# ---------------- 5. DUCKDUCKGO AI (CHATBOT) ---------------- #
+# This is the LAST handler so it doesn't intercept commands
 
-def get_duckduckgo_response(user_text):
+def get_ai_response(user_text):
     try:
-        # We use the DDGS library to chat for free
-        system_prompt = "You are Baka, a sassy and cute female Telegram bot. Reply in Hinglish (Hindi + English mix). Be playful and dramatic. User says: "
-        
-        # Initiate the chat call
-        results = DDGS().chat(f"{system_prompt} {user_text}", model='gpt-4o-mini') 
-        # Note: DDGS wraps GPT-4o-mini via DuckDuckGo for free
-        
+        # Use GPT-4o-mini via DuckDuckGo
+        # We inject the "Persona" into the user's message invisibly
+        prompt = (
+            "You are Baka, a sassy and cute female Telegram bot. "
+            "Reply in Hinglish (mix of Hindi and English). "
+            "Use emojis. Be helpful but playful. "
+            f"User says: {user_text}"
+        )
+        results = DDGS().chat(prompt, model='gpt-4o-mini')
         return results
     except Exception as e:
         print(f"AI Error: {e}")
-        return "Mera server down hai... baad mein aana! 😵‍💫"
+        return "Mera dimag kharab ho raha hai (Error) 😵‍💫"
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
-    # Ignore commands
+    # 1. Ignore if message starts with / or .
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
+    # 2. Logic: Private OR (Group AND (Mentioned OR Reply))
     is_private = message.chat.type == "private"
     is_mentioned = message.mentioned
     is_reply_to_bot = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
@@ -351,11 +354,12 @@ async def chat_handler(client, message: Message):
     if is_private or is_mentioned or is_reply_to_bot:
         try:
             await client.send_chat_action(message.chat.id, "typing")
-            # Run in thread because DDGS is synchronous
-            reply = await asyncio.to_thread(get_duckduckgo_response, message.text)
-            await message.reply_text(reply)
+            # Run in thread to avoid blocking
+            reply = await asyncio.to_thread(get_ai_response, message.text)
+            if reply:
+                await message.reply_text(reply)
         except Exception as e:
-            pass
+            print(f"Handler Error: {e}")
 
 # ---------------- 6. STARTUP ---------------- #
 
