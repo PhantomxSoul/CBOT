@@ -1,3 +1,5 @@
 pyrogram
 tgcrypto
-requests
+duckduckgo-search
+typing_extensions
+curl_cffi
