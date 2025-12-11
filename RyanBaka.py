@@ -4,6 +4,7 @@ import random
 import asyncio
 import requests
 import urllib.parse
+from datetime import datetime  # <--- FIXED MISSING IMPORT
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatType, ChatAction, ChatMemberStatus
@@ -24,7 +25,6 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 MONGO_URL = os.environ.get("MONGO_URL")
-# Ensure LOG_CHANNEL_ID starts with -100
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", "0"))
 
 app = Client("baka_master", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -71,7 +71,6 @@ async def log_event(text):
         try:
             await app.send_message(LOG_CHANNEL_ID, text, disable_web_page_preview=True)
         except Exception as e:
-            # THIS WILL SHOW IN HEROKU LOGS IF IT FAILS
             print(f"❌ LOG ERROR: {e}")
 
 # ---------------- 1. MENUS & CORE ---------------- #
@@ -185,10 +184,8 @@ async def gift_item(client, message: Message):
 
 @app.on_message(filters.command(["stupid_meter", "brain", "look", "crush", "love"]))
 async def fun_meters(client, message: Message):
-    # EXACT LOGIC: Group only
     if message.chat.type == ChatType.PRIVATE:
         return await message.reply_text("🚫 You can use this command in groups only !")
-        
     p = random.randint(0, 100)
     cmd = message.command[0]
     await message.reply_text(f"📊 **{cmd.title()} Level:** {p}%")
@@ -410,10 +407,9 @@ async def main():
     print("Bot Starting...")
     await app.start()
     
-    # Send Deployment Log
     await log_event(f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}")
     
-    # 50+ COMMANDS LIST
+    # 50+ COMMANDS
     commands = [
         ("start", "Talk to Baka"), ("pay", "Buy premium access"), ("check", "Check protection"),
         ("daily", "Claim $1000 daily reward"), ("claim", "Add baka in groups and claim"),
