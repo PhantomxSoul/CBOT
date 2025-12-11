@@ -1,9 +1,7 @@
 import os
 import time
-import random
 import asyncio
 import requests
-import urllib.parse
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatType, ChatAction
 from pyrogram.types import (
@@ -20,6 +18,7 @@ API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -120,38 +119,54 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. UNSTOPPABLE AI ENGINE ---------------- #
+# ---------------- 4. GITHUB MODELS AI ENGINE ---------------- #
 
 def get_ai_response(user_text):
-    # Models to try in order (If one fails, try next)
-    models = ["openai", "mistral", "searchgpt", "qwen"]
-    
-    seed = random.randint(1, 999999) # Anti-cache
-    system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. Be savage, cute. User: "
-    
-    # 1. Clean Text
-    full_prompt = f"{system} {user_text}"
-    encoded_prompt = urllib.parse.quote(full_prompt)
-    
-    # 2. Try each model until one works
-    for model in models:
-        try:
-            url = f"https://text.pollinations.ai/{encoded_prompt}?model={model}&seed={seed}"
-            response = requests.get(url, timeout=5)
+    if not GITHUB_TOKEN:
+        return "⚠️ Error: GITHUB_TOKEN Missing in Heroku!"
+
+    try:
+        # Standard OpenAI-format request to GitHub Models Endpoint
+        url = "https://models.inference.ai.azure.com/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {GITHUB_TOKEN}"
+        }
+        
+        # Baka Persona
+        system_prompt = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. Keep replies short."
+        
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text}
+            ],
+            "model": "gpt-4o", # Using GPT-4o via GitHub
+            "temperature": 0.8,
+            "max_tokens": 200
+        }
+        
+        # Request with 10s timeout
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        else:
+            print(f"GITHUB API ERROR: {response.status_code} - {response.text}")
+            return "Server mood mein nahi hai... (API Error) 😵‍💫"
             
-            if response.status_code == 200 and len(response.text) > 1:
-                return response.text
-                
-        except:
-            continue # Try next model
-            
-    return "Dimag kharab ho gaya... server down hai! 😵‍💫"
+    except Exception as e:
+        print(f"SYSTEM ERROR: {e}")
+        return "System crash ho gaya! 😵‍💫"
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
+    # Skip Commands
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
+    # Logic
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = False
@@ -159,6 +174,7 @@ async def chat_handler(client, message: Message):
         if message.reply_to_message.from_user.is_self:
             is_reply = True
 
+    # Process
     if is_private or is_mentioned or is_reply:
         try:
             await client.send_chat_action(message.chat.id, ChatAction.TYPING)
