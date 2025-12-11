@@ -2,6 +2,8 @@ import os
 import time
 import random
 import asyncio
+import requests
+import urllib.parse
 from pyrogram import Client, filters, idle
 from pyrogram.types import (
     InlineKeyboardMarkup, 
@@ -11,8 +13,6 @@ from pyrogram.types import (
     ChatPermissions,
     BotCommand
 )
-# New Library for AI
-from duckduckgo_search import DDGS
 
 # ---------------- CONFIGURATION ---------------- #
 API_ID = int(os.environ.get("API_ID"))
@@ -321,24 +321,31 @@ async def admin_cmds(client, message: Message):
             await message.delete()
     except: pass
 
-# ---------------- 5. DUCKDUCKGO AI (CHATBOT) ---------------- #
+# ---------------- 5. AI CHATBOT (SIMPLIFIED & FIXED) ---------------- #
 # This is the LAST handler so it doesn't intercept commands
 
 def get_ai_response(user_text):
     try:
-        # Use GPT-4o-mini via DuckDuckGo
-        # We inject the "Persona" into the user's message invisibly
-        prompt = (
-            "You are Baka, a sassy and cute female Telegram bot. "
-            "Reply in Hinglish (mix of Hindi and English). "
-            "Use emojis. Be helpful but playful. "
-            f"User says: {user_text}"
-        )
-        results = DDGS().chat(prompt, model='gpt-4o-mini')
-        return results
+        # Persona
+        system = "You are Baka, a sassy female bot. Reply in Hinglish. User says: "
+        
+        # 1. ENCODING FIX: Convert prompt to valid URL format (spaces -> %20)
+        full_text = f"{system} {user_text}"
+        encoded_prompt = urllib.parse.quote(full_text)
+        
+        # 2. POLLINATIONS API (No Key Required)
+        url = f"https://text.pollinations.ai/{encoded_prompt}"
+        
+        # 3. REQUEST with 5s timeout
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            return response.text
+        return "Bot is sleeping..."
     except Exception as e:
-        print(f"AI Error: {e}")
-        return "Mera dimag kharab ho raha hai (Error) 😵‍💫"
+        # Prints error to Heroku logs so we can see if something is wrong
+        print(f"AI ERROR: {e}") 
+        return None
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
@@ -354,12 +361,12 @@ async def chat_handler(client, message: Message):
     if is_private or is_mentioned or is_reply_to_bot:
         try:
             await client.send_chat_action(message.chat.id, "typing")
-            # Run in thread to avoid blocking
+            # Run AI in thread
             reply = await asyncio.to_thread(get_ai_response, message.text)
             if reply:
                 await message.reply_text(reply)
         except Exception as e:
-            print(f"Handler Error: {e}")
+            print(f"HANDLER ERROR: {e}")
 
 # ---------------- 6. STARTUP ---------------- #
 
