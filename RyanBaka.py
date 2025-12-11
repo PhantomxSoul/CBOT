@@ -17,13 +17,12 @@ API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
-# Add your ID here in Heroku Config Vars to use Admin/Sudo commands
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # ---------------- MOCK DATABASE ---------------- #
-# Stores: {user_id: {'name': str, 'balance': int, 'premium': bool, ...}}
+# Stores user data in memory. (Resets on restart)
 user_db = {}
 
 def get_user(user_id, name="User"):
@@ -36,26 +35,25 @@ def get_user(user_id, name="User"):
             "premium": False,
             "last_daily": 0,
             "protected_until": 0,
-            "warns": 0
+            "warns": 0,
+            "claimed_group": False
         }
     if name != "User": 
         user_db[user_id]["name"] = name
     return user_db[user_id]
 
-# ---------------- 1. EXACT START MENU (RESTORED) ---------------- #
+# ---------------- 1. START & MENUS ---------------- #
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
     get_user(message.from_user.id, message.from_user.first_name)
     
-    # EXACT FONTS AND TEXT
     txt = (
         f"✨ 𝐇𝐞𝐲 {message.from_user.mention} ~\n"
         f"𖦹 𝒀𝒐𝒖'𝒓𝒆 𝒕𝒂𝒍𝒌𝒊𝒏𝒈 𝒕𝒐 𝑩𝒂𝒌𝒂, 𝒂 𝒔𝒂𝒔𝒔𝒚 𝒄𝒖𝒕𝒊𝒆 𝒃𝒐𝒕 💕\n\n"
         f"𖥔 Choose an option below:"
     )
 
-    # EXACT BUTTON LAYOUT
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ 𝐓𝐚𝐥𝐤 𝐭𝐨 𝑩𝒂𝒌𝒂 💬", callback_data="talk_info")],
         [InlineKeyboardButton("✨ 𝑭𝒓𝒊𝒆𝒏𝒅𝒔 🧸", callback_data="friends_info"),
@@ -73,84 +71,9 @@ async def callback_handler(client, query: CallbackQuery):
     elif query.data == "games_info":
         await query.answer("Use /economy to see games! 🎮", show_alert=True)
 
-# ---------------- 2. EXACT REPLIES (NEW REQUEST) ---------------- #
-
-@app.on_message(filters.command("daily"))
-async def daily_cmd(client, message: Message):
-    user = get_user(message.from_user.id, message.from_user.first_name)
-    now = time.time()
-    
-    if now - user['last_daily'] < 86400:
-        hours = int((86400 - (now - user['last_daily'])) / 3600)
-        await message.reply_text(f"⏳ Please wait {hours} hours!")
-        return
-
-    reward = 2000 if user['premium'] else 1000
-    user['balance'] += reward
-    user['last_daily'] = now
-
-    # EXACT RESPONSE TEXT
-    if user['premium']:
-         await message.reply_text(f"✅ You received: ${reward} daily reward! (Premium 🌟)")
-    else:
-        await message.reply_text(
-            f"✅ You received: ${reward} daily reward!\n"
-            f"💓 Upgrade to premium using /pay to get $2000 daily reward!"
-        )
-
-@app.on_message(filters.command("pay"))
-async def pay_cmd(client, message: Message):
-    # EXACT RESPONSE TEXT
-    txt = (
-        "💓 **Baka Premium Access Link**\n\n"
-        "👇 **Important Note :**\n\n"
-        "1. You must enter your Telegram ID (Numeric ID) on the payment page.\n"
-        "It's not necessary to provide real phone number on payment page\n\n"
-        ".2. Upon successful payment, you will receive automatic premium access.\n\n"
-        "3. You can check your Telegram ID using this command : /id \n\n"
-        "Thank you! 💓\n\n\n"
-        "Here is your payment link: @WTF_Phantom"
-    )
-    await message.reply_text(txt)
-
-@app.on_message(filters.command("id"))
-async def id_cmd(client, message: Message):
-    txt = (
-        f"👤 **Your User ID:** `{message.from_user.id}`\n"
-        f"💬 **Chat ID:** `{message.chat.id}`"
-    )
-    await message.reply_text(txt)
-
-# ---------------- 3. HELP & MENUS (RESTORED) ---------------- #
-
-@app.on_message(filters.command("help"))
-async def help_command(client, message: Message):
-    txt = (
-        "🛡️ **Admin Commands (.prefix only):**\n"
-        ".warn [reply] - Warn a user (3 = ban)\n"
-        ".unwarn [reply] - Remove 1 warning\n"
-        ".mute [reply] - Mute temporarily/permanently\n"
-        ".unmute [reply] - Unmute the user\n"
-        ".ban [reply] - Ban user\n"
-        ".unban [reply] - Unban user\n"
-        ".kick [reply] - Kick from group\n"
-        ".promote [reply] 1/2/3 - Promote replied user to admin\n"
-        ".demote [reply] - Demote admin\n"
-        ".title [tag] [reply] - Set custom title\n"
-        ".pin [reply] - Pin a message\n"
-        ".unpin - Unpin the current message\n"
-        ".del - delete a message\n"
-        ".help - Show this help\n\n"
-        "To talk to me, just send me any message 💬✨\n\n"
-        "🎮 **Game Features**\n"
-        "To know about the Lottery System, tap /game\n"
-        "To know about the Economy System, tap /economy\n\n"
-        "Have fun and be lucky 🍀"
-    )
-    await message.reply_text(txt)
-
 @app.on_message(filters.command("economy"))
 async def economy_command(client, message: Message):
+    # EXACT TEXT AS REQUESTED
     txt = (
         "💰 **Baka Economy System Guide**\n\n"
         "💬 **How it works:**\n"
@@ -171,11 +94,35 @@ async def economy_command(client, message: Message):
         "• /daily — Receive $2000 daily reward\n"
         "• /rob (reply) — Max $100,000\n"
         "• /kill (reply) — Reward $200-400\n"
-        "• /protect 1d|2d|3d — Buy protection (avoid robbery)\n"
+        "• /protect 1d|2d|3d — Buy protection (avoid robbery)"
     )
     await message.reply_text(txt)
 
-# ---------------- 4. FULL ECONOMY (RESTORED) ---------------- #
+@app.on_message(filters.command("help"))
+async def help_command(client, message: Message):
+    txt = (
+        "🛡️ **Admin Commands (.prefix only):**\n"
+        ".warn, .mute, .ban, .pin, .del\n\n"
+        "To talk to me, just send me any message 💬✨\n\n"
+        "🎮 **Game Features**\n"
+        "To know about the Lottery System, tap /game\n"
+        "To know about the Economy System, tap /economy\n\n"
+        "Have fun and be lucky 🍀"
+    )
+    await message.reply_text(txt)
+
+# ---------------- 2. ECONOMY COMMANDS ---------------- #
+
+@app.on_message(filters.command("claim") & filters.group)
+async def claim_cmd(client, message: Message):
+    user = get_user(message.from_user.id, message.from_user.first_name)
+    if user['claimed_group']:
+        await message.reply_text("✨ You have already claimed the group bonus!")
+        return
+    
+    user['balance'] += 10000
+    user['claimed_group'] = True
+    await message.reply_text(f"🎉 **Bonus Claimed!**\nYou added Baka to the group and received **$10,000**! 💸")
 
 @app.on_message(filters.command("bal"))
 async def bal_cmd(client, message: Message):
@@ -183,9 +130,8 @@ async def bal_cmd(client, message: Message):
     name = message.reply_to_message.from_user.first_name if message.reply_to_message else message.from_user.first_name
     
     data = get_user(user_id, name)
-    
-    # Rank Logic Mockup
-    rank = random.randint(100, 2000) 
+    # Mock rank for display
+    rank = random.randint(1, 1000)
     
     txt = (
         f"👤 Name: {data['name']}\n"
@@ -196,27 +142,80 @@ async def bal_cmd(client, message: Message):
     )
     await message.reply_text(txt)
 
-@app.on_message(filters.command("register"))
-async def register_cmd(client, message: Message):
-    if message.from_user.id in user_db:
-        await message.reply_text("✨ You are already registered !!")
-    else:
-        get_user(message.from_user.id, message.from_user.first_name)
-        user_db[message.from_user.id]['balance'] = 5000
-        await message.reply_text("🎉 Registration successful! +5000 added 💸")
+@app.on_message(filters.command("daily"))
+async def daily_cmd(client, message: Message):
+    user = get_user(message.from_user.id, message.from_user.first_name)
+    now = time.time()
+    
+    if now - user['last_daily'] < 86400:
+        hours = int((86400 - (now - user['last_daily'])) / 3600)
+        await message.reply_text(f"⏳ Please wait {hours} hours!")
+        return
 
-@app.on_message(filters.command("revive"))
-async def revive_cmd(client, message: Message):
-    data = get_user(message.from_user.id)
-    if data['status'] == "alive":
-        await message.reply_text("❤️ You are already alive!")
+    reward = 2000 if user['premium'] else 1000
+    user['balance'] += reward
+    user['last_daily'] = now
+
+    if user['premium']:
+         await message.reply_text(f"✅ You received: ${reward} daily reward! (Premium 🌟)")
+    else:
+        await message.reply_text(
+            f"✅ You received: ${reward} daily reward!\n"
+            f"💓 Upgrade to premium using /pay to get $2000 daily reward!"
+        )
+
+@app.on_message(filters.command("rob"))
+async def rob_cmd(client, message: Message):
+    if not message.reply_to_message:
+        await message.reply_text("Reply to a user to rob them!")
         return
-    if data['balance'] < 500:
-        await message.reply_text("❌ You need $500 to revive!")
+
+    # Check if amount is specified
+    try:
+        amount_to_rob = int(message.command[1])
+    except:
+        amount_to_rob = 0 # If 0 or not specified, we try to rob max possible randomly
+
+    robber = get_user(message.from_user.id)
+    victim = get_user(message.reply_to_message.from_user.id)
+
+    # Dead checks
+    if robber['status'] == "dead":
+        await message.reply_text("You are dead! ☠️")
         return
-    data['balance'] -= 500
-    data['status'] = "alive"
-    await message.reply_text("❤️ You revived yourself! -$500")
+    if victim['status'] == "dead":
+        await message.reply_text("They are already dead ☠️")
+        return
+
+    # Protection check
+    if time.time() < victim['protected_until']:
+        await message.reply_text("🛡️ This user is protected!")
+        return
+
+    # Limits
+    max_limit = 100000 if robber['premium'] else 10000
+    
+    # If user didn't specify amount, or specified too high, cap it
+    if amount_to_rob <= 0 or amount_to_rob > max_limit:
+        amount_to_rob = random.randint(100, max_limit)
+
+    # Check victim balance
+    if victim['balance'] < amount_to_rob:
+        amount_to_rob = victim['balance']
+
+    if amount_to_rob <= 0:
+        await message.reply_text("They have no money! 🥺")
+        return
+
+    # Success/Fail Logic (50% Chance)
+    if random.choice([True, False]):
+        victim['balance'] -= amount_to_rob
+        robber['balance'] += amount_to_rob
+        await message.reply_text(f"💸 **Success!** You stole **${amount_to_rob}** from {message.reply_to_message.from_user.first_name}!")
+    else:
+        fine = 500
+        robber['balance'] -= fine
+        await message.reply_text(f"🚔 **Caught!** Police fined you **${fine}**.")
 
 @app.on_message(filters.command("kill"))
 async def kill_cmd(client, message: Message):
@@ -244,25 +243,59 @@ async def kill_cmd(client, message: Message):
     
     await message.reply_text(f"⚠️ You killed {message.reply_to_message.from_user.first_name}!\nEarned: ${reward}\nThey are now dead.")
 
+@app.on_message(filters.command("revive"))
+async def revive_cmd(client, message: Message):
+    # Handles both self revive and reviving others
+    target_id = message.from_user.id
+    payer_id = message.from_user.id
+    
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        
+    user = get_user(target_id)
+    payer = get_user(payer_id)
+
+    if user['status'] == "alive":
+        await message.reply_text(f"{'You are' if target_id == payer_id else 'They are'} already alive! ❤️")
+        return
+        
+    if payer['balance'] < 500:
+        await message.reply_text("❌ You need $500 to perform a revive!")
+        return
+        
+    payer['balance'] -= 500
+    user['status'] = "alive"
+    
+    if target_id == payer_id:
+        await message.reply_text("❤️ You revived yourself! -$500")
+    else:
+        await message.reply_text(f"❤️ You revived {message.reply_to_message.from_user.first_name}! -$500")
+
 @app.on_message(filters.command("protect"))
 async def protect_cmd(client, message: Message):
     if len(message.command) < 2:
-        await message.reply_text("⚠️ Usage: /protect 1d or /protect 2d")
+        await message.reply_text("⚠️ Usage: /protect 1d")
         return
         
     duration = message.command[1]
     days_map = {"1d": 1, "2d": 2, "3d": 3}
+    
     if duration not in days_map: return
+    
+    # Premium check for >1d
+    user = get_user(message.from_user.id)
+    if days_map[duration] > 1 and not user['premium']:
+        await message.reply_text("❌ Only Premium users can buy 2d or 3d protection!")
+        return
         
     cost = 2000 * days_map[duration]
-    data = get_user(message.from_user.id)
     
-    if data['balance'] < cost:
+    if user['balance'] < cost:
         await message.reply_text(f"❌ You need ${cost}!")
         return
         
-    data['balance'] -= cost
-    data['protected_until'] = time.time() + (86400 * days_map[duration])
+    user['balance'] -= cost
+    user['protected_until'] = time.time() + (86400 * days_map[duration])
     await message.reply_text(f"🛡️ You are now protected for {duration}.")
 
 @app.on_message(filters.command("give"))
@@ -285,32 +318,6 @@ async def give_cmd(client, message: Message):
     receiver['balance'] += (amount - tax)
     await message.reply_text(f"💸 Sent ${amount - tax} (Tax: ${tax})")
 
-@app.on_message(filters.command("rob"))
-async def rob_cmd(client, message: Message):
-    if not message.reply_to_message: return
-    robber = get_user(message.from_user.id)
-    victim = get_user(message.reply_to_message.from_user.id)
-    
-    if robber['status'] == "dead" or victim['status'] == "dead":
-        await message.reply_text("Cannot rob dead people!")
-        return
-
-    if time.time() < victim['protected_until']:
-        await message.reply_text("🛡️ Target is protected!")
-        return
-
-    # Rob logic: 50% chance to fail
-    if random.choice([True, False]):
-        amount = random.randint(100, 5000)
-        if victim['balance'] < amount: amount = victim['balance']
-        victim['balance'] -= amount
-        robber['balance'] += amount
-        await message.reply_text(f"💸 You stole ${amount} from {message.reply_to_message.from_user.first_name}!")
-    else:
-        fine = 500
-        robber['balance'] -= fine
-        await message.reply_text(f"🚔 Police caught you! You paid ${fine} fine.")
-
 @app.on_message(filters.command("toprich"))
 async def toprich(client, message: Message):
     top = sorted(user_db.values(), key=lambda x: x['balance'], reverse=True)[:10]
@@ -319,7 +326,37 @@ async def toprich(client, message: Message):
         txt += f"{i}. {u['name']} - ${u['balance']}\n"
     await message.reply_text(txt)
 
-# ---------------- 5. SUDO / OWNER COMMANDS (NEW) ---------------- #
+@app.on_message(filters.command("topkill"))
+async def topkill(client, message: Message):
+    top = sorted(user_db.values(), key=lambda x: x['kills'], reverse=True)[:10]
+    txt = "⚔️ **Top 10 Killers**\n\n"
+    for i, u in enumerate(top, 1):
+        txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
+    await message.reply_text(txt)
+
+# ---------------- 3. PAYMENT & ADMIN ---------------- #
+
+@app.on_message(filters.command("pay"))
+async def pay_cmd(client, message: Message):
+    txt = (
+        "💓 **Baka Premium Access Link**\n\n"
+        "👇 **Important Note :**\n\n"
+        "1. You must enter your Telegram ID (Numeric ID) on the payment page.\n"
+        "It's not necessary to provide real phone number on payment page\n\n"
+        ".2. Upon successful payment, you will receive automatic premium access.\n\n"
+        "3. You can check your Telegram ID using this command : /id \n\n"
+        "Thank you! 💓\n\n\n"
+        "Here is your payment link: @WTF_Phantom"
+    )
+    await message.reply_text(txt)
+
+@app.on_message(filters.command("id"))
+async def id_cmd(client, message: Message):
+    txt = (
+        f"👤 **Your User ID:** `{message.from_user.id}`\n"
+        f"💬 **Chat ID:** `{message.chat.id}`"
+    )
+    await message.reply_text(txt)
 
 @app.on_message(filters.command("makepremium") & filters.user(OWNER_ID))
 async def make_premium(client, message: Message):
@@ -351,7 +388,7 @@ async def premium_list(client, message: Message):
             txt += f"{count}. [{data['name']}](tg://user?id={uid}) (`{uid}`)\n"
     await message.reply_text(txt if count > 0 else "No premium users found.")
 
-# ---------------- 6. ADMIN DOT COMMANDS (RESTORED) ---------------- #
+# ---------------- 4. DOT COMMANDS (ADMIN) ---------------- #
 
 async def check_admin(message):
     try:
@@ -397,20 +434,29 @@ async def delete_msg(client, message: Message):
         await message.delete()
     except: pass
 
-# ---------------- 7. STARTUP ---------------- #
+# ---------------- 5. STARTUP SCRIPT ---------------- #
 
 async def main():
     print("Bot Starting...")
     async with app:
+        # Registers ALL commands in the "/" shortcut menu
         await app.set_bot_commands([
             BotCommand("start", "Start Bot"),
-            BotCommand("help", "Get Help"),
+            BotCommand("help", "Help Menu"),
             BotCommand("economy", "Economy Guide"),
-            BotCommand("daily", "Claim Reward"),
-            BotCommand("pay", "Get Premium"),
+            BotCommand("claim", "Claim Group Bonus"),
+            BotCommand("daily", "Daily Reward"),
             BotCommand("bal", "Check Balance"),
+            BotCommand("rob", "Rob User"),
+            BotCommand("kill", "Kill User"),
+            BotCommand("revive", "Revive User"),
+            BotCommand("protect", "Buy Protection"),
+            BotCommand("give", "Give Money"),
+            BotCommand("toprich", "Richest Users"),
+            BotCommand("topkill", "Top Killers"),
+            BotCommand("pay", "Buy Premium"),
         ])
-        print("Bot is Alive!")
+        print("Bot is Alive & Commands Registered!")
         await idle()
 
 if __name__ == "__main__":
