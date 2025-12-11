@@ -20,22 +20,28 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0")) 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# ---------------- AI SETUP (UNCENSORED) ---------------- #
+# ---------------- AI SETUP (MULTI-MODEL BACKUP) ---------------- #
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # SAFETY SETTINGS: BLOCK_NONE allows the bot to be sassy/savage
-    safety_settings = [
+    # SAFETY: Disable filters so Baka can be sassy
+    SAFETY_SETTINGS = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
     
-    # Using Flash model (Fastest & Free)
-    model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
+    # PRIORITY LIST: Try these models in order
+    # We use the models available in your provided list
+    MODEL_LIST = [
+        "models/gemini-2.5-flash",       # 1. Best & Newest
+        "models/gemini-2.0-flash",       # 2. Stable Backup
+        "models/gemini-2.0-flash-lite",  # 3. Lightweight Backup
+        "models/gemini-2.5-flash-lite"   # 4. Final Backup
+    ]
 else:
-    model = None
+    MODEL_LIST = []
     print("⚠️ GEMINI_API_KEY MISSING")
 
 app = Client("baka_clone", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -137,35 +143,42 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. GOOGLE GEMINI CHATBOT (DEBUG MODE) ---------------- #
+# ---------------- 4. SMART AI ENGINE (AUTO-FALLBACK) ---------------- #
 
 def get_ai_response(user_text):
-    if not model:
-        return "⚠️ Error: GEMINI_API_KEY is missing in Heroku Config Vars!"
+    if not GEMINI_API_KEY:
+        return "⚠️ Error: GEMINI_API_KEY Missing!"
     
-    try:
-        persona = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. Keep replies short."
-        full_prompt = f"{persona}\nUser: {user_text}"
-        
-        response = model.generate_content(full_prompt)
-        
-        # Check if response was blocked
-        if not response.text:
-            return "⚠️ Error: Message blocked by Safety Filter."
+    persona = "You are Baka, a sassy female Telegram bot. Reply in Hinglish (Hindi + English). Be savage, cute, and use emojis. Keep replies short."
+    full_prompt = f"{persona}\nUser: {user_text}"
+    
+    # Try models one by one
+    for model_name in MODEL_LIST:
+        try:
+            # Configure Model
+            model = genai.GenerativeModel(model_name, safety_settings=SAFETY_SETTINGS)
             
-        return response.text
-    except Exception as e:
-        # RETURN THE ACTUAL ERROR TO THE USER
-        error_msg = str(e)
-        if "400" in error_msg:
-            return "⚠️ Error: API Key is Invalid. Check Heroku Config Vars."
-        return f"⚠️ System Error: {error_msg}"
+            # Generate Response
+            response = model.generate_content(full_prompt)
+            
+            # If successful, return text
+            if response.text:
+                return response.text
+                
+        except Exception as e:
+            # If 404 (Not Found) or other error, print and try next model
+            print(f"FAILED {model_name}: {e}")
+            continue # Try next model in list
+            
+    return "Oof, Google servers died! 😵‍💫 (All models failed)"
 
 @app.on_message(filters.text)
 async def chat_handler(client, message: Message):
+    # Skip Commands
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
+    # Logic
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = False
