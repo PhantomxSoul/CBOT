@@ -5,6 +5,8 @@ import asyncio
 import requests
 import urllib.parse
 from pyrogram import Client, filters, idle
+# CRITICAL: Importing Enums to fix the crash
+from pyrogram.enums import ChatType, ChatAction 
 from pyrogram.types import (
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
@@ -120,18 +122,19 @@ async def pay_cmd(client, message: Message):
 async def id_cmd(client, message: Message):
     await message.reply_text(f"👤 Your ID: `{message.from_user.id}`")
 
-# ---------------- 4. AI CHATBOT (SUPER DEBUG VERSION) ---------------- #
+# ---------------- 4. AI CHATBOT (FIXED) ---------------- #
 
 def get_ai_response(user_text):
     try:
-        # Simple persona
-        system = "You are Baka, a sassy female bot. Reply in Hinglish. User says: "
+        # Persona
+        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. User says: "
         
-        # 1. CLEAN TEXT: Remove emojis or weird chars that might break the URL
-        safe_text = urllib.parse.quote(f"{system} {user_text}")
+        # Encoding
+        full_prompt = f"{system} {user_text}"
+        encoded_prompt = urllib.parse.quote(full_prompt)
         
-        # 2. CALL API
-        url = f"https://text.pollinations.ai/{safe_text}"
+        # API Call
+        url = f"https://text.pollinations.ai/{encoded_prompt}"
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
@@ -147,33 +150,29 @@ async def chat_handler(client, message: Message):
     if message.text.startswith("/") or message.text.startswith("."):
         return
 
-    # 2. ROBUST LOGIC (String Checks)
-    # Check if Private Chat
-    is_private = str(message.chat.type) == "ChatType.PRIVATE"
-    
-    # Check if Mentioned (e.g. @Baka_Bot)
+    # 2. Logic Check
+    is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     
-    # Check if Reply to Bot
+    # Check Reply
     is_reply = False
     if message.reply_to_message and message.reply_to_message.from_user:
-        if message.reply_to_message.from_user.is_self: # is_self checks if it's the bot
+        if message.reply_to_message.from_user.is_self:
             is_reply = True
 
-    # DEBUG PRINTS - Check your Heroku logs for these lines!
-    print(f"DEBUG LOG -> Msg: {message.text} | Private: {is_private} | Mentioned: {is_mentioned} | Reply: {is_reply}")
-
-    # 3. REPLY IF ANY IS TRUE
+    # 3. Process
     if is_private or is_mentioned or is_reply:
         try:
-            await client.send_chat_action(message.chat.id, "typing")
+            # FIX: Use Enum here instead of string "typing"
+            await client.send_chat_action(message.chat.id, ChatAction.TYPING)
+            
+            # Get Response
             reply = await asyncio.to_thread(get_ai_response, message.text)
             
             if reply:
                 await message.reply_text(reply)
             else:
-                # If API fails, send a backup message so we know code worked
-                await message.reply_text("... (thinking)") 
+                await message.reply_text("Thinking... 🤔") 
         except Exception as e:
             print(f"HANDLER CRASH: {e}")
 
