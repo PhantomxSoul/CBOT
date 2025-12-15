@@ -29,10 +29,10 @@ from pyrogram.types import BotCommand
 # IMPORT SETTINGS FROM CONFIG
 from config import API_ID, API_HASH, BOT_TOKEN, MONGO_URL, LOG_CHANNEL_ID
 
-# FIXED IMPORT: Now looks inside plugins/helper.py
+# IMPORT HELPER TEXTS
 from plugins.helper import START_TEXT, HELP_TEXT
 
-# INITIALIZE CLIENT WITH PLUGINS
+# INITIALIZE CLIENT
 app = Client(
     "baka_master", 
     api_id=API_ID, 
@@ -54,11 +54,19 @@ users_col = db.users
 async def log_deployment():
     if LOG_CHANNEL_ID != 0:
         try:
+            # FIX: FORCE BOT TO FETCH CHAT INFO FIRST
+            # This solves the "Peer id invalid" error on Heroku restarts
+            try:
+                await app.get_chat(LOG_CHANNEL_ID)
+            except:
+                pass # If it fails, we try sending anyway
+
             await app.send_message(
                 LOG_CHANNEL_ID, 
                 f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: Modular v3.0",
                 disable_web_page_preview=True
             )
+            print("✅ Deployment Log Sent.")
         except Exception as e:
             print(f"❌ LOG ERROR: Could not send deployment log. Reason: {e}")
 
