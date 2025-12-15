@@ -29,8 +29,10 @@ from pyrogram.types import BotCommand
 # IMPORT SETTINGS FROM CONFIG
 from config import API_ID, API_HASH, BOT_TOKEN, MONGO_URL, LOG_CHANNEL_ID
 
+# FIXED IMPORT: Now looks inside plugins/helper.py
+from plugins.helper import START_TEXT, HELP_TEXT
+
 # INITIALIZE CLIENT WITH PLUGINS
-# This tells Pyrogram to look in the "plugins" folder for all your other files (admin.py, games.py, etc.)
 app = Client(
     "baka_master", 
     api_id=API_ID, 
@@ -49,7 +51,6 @@ db = mongo.baka_bot
 users_col = db.users
 
 # --- HELPER FUNCTIONS ---
-# This logs the deployment status to your specified channel
 async def log_deployment():
     if LOG_CHANNEL_ID != 0:
         try:
@@ -73,7 +74,6 @@ async def main():
     await log_deployment()
     
     # 3. Set Bot Commands (Menu)
-    # This makes the menu button appear with all these commands
     commands = [
         ("start", "Talk to Baka"), 
         ("pay", "Buy premium access"), 
