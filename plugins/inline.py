@@ -1,6 +1,5 @@
 from pyrogram import Client
 from pyrogram.types import CallbackQuery
-plugins.helper path
 from plugins.helper import ECONOMY_TEXT
 
 @Client.on_callback_query()
