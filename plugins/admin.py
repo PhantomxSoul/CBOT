@@ -1,7 +1,9 @@
 import os
 from pyrogram import Client, filters
-from pyrogram.enums import ChatType, ChatMemberStatus, ChatPermissions
-from pyrogram.types import Message
+# FIXED: Removed ChatPermissions from enums
+from pyrogram.enums import ChatType, ChatMemberStatus
+# FIXED: Added ChatPermissions to types
+from pyrogram.types import Message, ChatPermissions
 from motor.motor_asyncio import AsyncIOMotorClient
 # IMPORT CONFIG
 from config import MONGO_URL
@@ -113,6 +115,8 @@ async def admin_actions(client: Client, message: Message):
             await message.reply_text(f"👮‍♂️ **Promoted** {user.mention} to Admin!")
             
     except Exception as e:
+        # Print actual error to logs for debugging if needed
+        print(f"Admin Action Error: {e}")
         await message.reply_text(f"❌ **Error:** I need Admin Rights (or higher rank) to do this!")
 
 # --- WARN SYSTEM (With Database) ---
