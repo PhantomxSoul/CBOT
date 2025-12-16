@@ -1,24 +1,3 @@
-# Copyright (c) 2025 Telegram:- @WTF_Phantom <DevixOP>
-# Location: Supaul, Bihar 
-#
-# All rights reserved.
-#
-# This code is the intellectual property of @WTF_Phantom.
-# You are not allowed to copy, modify, redistribute, or use this
-# code for commercial or personal projects without explicit permission.
-#
-# Allowed:
-# - Forking for personal learning
-# - Submitting improvements via pull requests
-#
-# Not Allowed:
-# - Claiming this code as your own
-# - Re-uploading without credit or permission
-# - Selling or using commercially
-#
-# Contact for permissions:
-# Email: king25258069@gmail.com
-
 import os
 import asyncio
 from datetime import datetime
@@ -64,7 +43,7 @@ async def log_deployment():
 
             await app.send_message(
                 LOG_CHANNEL_ID, 
-                f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: Modular v5.0 (Final)",
+                f"✅ **Bot Restarted Successful**\n📅 {datetime.now()}\n🤖 Version: Pro v5.0",
                 disable_web_page_preview=True
             )
             print("✅ Deployment Log Sent.")
@@ -74,16 +53,16 @@ async def log_deployment():
 # ---------------- STARTUP LOGIC ---------------- #
 
 async def main():
-    print("Bot Starting...")
+    print("➡️ Bot Starting...")
     
     # 1. Start the Bot Client
     await app.start()
-    print("Bot Client Started.")
+    print("✅ Bot Client Connected to Telegram.")
     
     # 2. Send Deployment Log
     await log_deployment()
     
-    # 3. Set Bot Commands (Menu)
+    # 3. Set Bot Commands (Full Menu)
     commands = [
         ("start", "Talk to Baka"), 
         ("pay", "Buy premium access"), 
@@ -125,7 +104,8 @@ async def main():
         ("item", "Use with or without reply"), 
         ("items", "Check all available items"),
         ("gift", "Gift a item"), 
-        ("economy", "See all economy commands")
+        ("economy", "See all economy commands"),
+        ("logs", "Get System Logs (Owner)")
     ]
     try:
         await app.set_bot_commands([BotCommand(c, d) for c, d in commands])
@@ -133,7 +113,7 @@ async def main():
     except Exception as e:
         print(f"⚠️ Failed to set commands: {e}")
 
-    print("Bot is Alive and Running!")
+    print("🤖 Bot is Idle and Running!")
     
     # 4. Keep the bot running
     await idle()
