@@ -1,5 +1,6 @@
 pyrogram
 tgcrypto
-requests
 motor
 dnspython
+requests
+python-dateutil
