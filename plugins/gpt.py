@@ -4,6 +4,7 @@ import requests
 import urllib.parse
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatAction
+# CHANGED: Import GIT_TOKEN
 from config import GIT_TOKEN
 
 # --- AI ENGINES ---
@@ -12,6 +13,7 @@ def ai_github(text):
     if not GIT_TOKEN: return None
     try:
         url = "https://models.inference.ai.azure.com/chat/completions"
+        # CHANGED: Use GIT_TOKEN
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {GIT_TOKEN}"}
         payload = {
             "messages": [
@@ -30,7 +32,6 @@ def ai_github(text):
 
 def ai_pollinations(text):
     try:
-        # Anti-Cache Seed
         seed = random.randint(1, 9999)
         system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish."
         encoded_text = urllib.parse.quote(text)
@@ -49,7 +50,6 @@ def ai_pollinations(text):
 
 @Client.on_message(filters.text & ~filters.regex(r"^[/\.]"))
 async def chat_handler(client, message):
-    # Logic: Reply in Private OR if Mentioned OR if Replying to Bot
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
@@ -57,6 +57,7 @@ async def chat_handler(client, message):
     if is_private or is_mentioned or is_reply:
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
         
+        # 1. Try GitHub (Smartest)
         response = await asyncio.to_thread(ai_github, message.text)
         
         # 2. Fallback to Pollinations (Unstoppable)
