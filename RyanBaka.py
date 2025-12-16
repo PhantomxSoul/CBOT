@@ -30,6 +30,7 @@ from pyrogram.types import BotCommand
 from config import API_ID, API_HASH, BOT_TOKEN, MONGO_URL, LOG_CHANNEL_ID
 
 # IMPORT HELPER TEXTS
+# This requires helper.py to be inside the 'plugins' folder!
 from plugins.helper import START_TEXT, HELP_TEXT
 
 # INITIALIZE CLIENT
@@ -55,15 +56,14 @@ async def log_deployment():
     if LOG_CHANNEL_ID != 0:
         try:
             # FIX: FORCE BOT TO FETCH CHAT INFO FIRST
-            # This solves the "Peer id invalid" error on Heroku restarts
             try:
                 await app.get_chat(LOG_CHANNEL_ID)
             except:
-                pass # If it fails, we try sending anyway
+                pass 
 
             await app.send_message(
                 LOG_CHANNEL_ID, 
-                f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: Modular v3.0",
+                f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: v4.0 (Fixed)",
                 disable_web_page_preview=True
             )
             print("✅ Deployment Log Sent.")
@@ -77,6 +77,7 @@ async def main():
     
     # 1. Start the Bot
     await app.start()
+    print("Bot Client Started.")
     
     # 2. Send Deployment Log
     await log_deployment()
@@ -127,16 +128,12 @@ async def main():
     ]
     try:
         await app.set_bot_commands([BotCommand(c, d) for c, d in commands])
-        print("✅ Bot Commands Set Successfully.")
+        print("✅ Bot Commands Set.")
     except Exception as e:
         print(f"⚠️ Failed to set commands: {e}")
 
-    print("Bot is Alive and Running!")
-    
-    # 4. Keep the bot running
+    print("Bot is Idle and Running!")
     await idle()
-    
-    # 5. Stop the bot gracefully
     await app.stop()
 
 if __name__ == "__main__":
