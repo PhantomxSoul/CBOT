@@ -1,39 +1,61 @@
 {
-  "name": "Baka Bot Clone",
-  "description": "A telegram bot clone with Economy, Killing, and Sassy features using Pyrogram.",
-  "logo": "https://cdn-icons-png.flaticon.com/512/4712/4712109.png",
+  "name": "RyanBaka Bot",
+  "description": "A modular Telegram bot with AI, Economy, and Management features.",
   "keywords": [
     "telegram",
     "bot",
     "python",
     "pyrogram",
-    "baka"
+    "ai",
+    "economy"
   ],
-  "repository": "https://github.com/your-username/your-repo-name",
   "stack": "heroku-24",
-  "env": {
-    "API_ID": {
-      "description": "Get this from https://my.telegram.org (API ID)",
-      "required": true
-    },
-    "API_HASH": {
-      "description": "Get this from https://my.telegram.org (API HASH)",
-      "required": true
-    },
-    "BOT_TOKEN": {
-      "description": "Get this from @BotFather on Telegram",
-      "required": true
-    },
-    "BOT_USERNAME": {
-      "description": "Your Bot's Username without @ (e.g. BakaCloneBot)",
-      "required": true
-    }
-  },
   "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-apt"
+    },
     {
       "url": "heroku/python"
     }
   ],
+  "env": {
+    "API_ID": {
+      "description": "Get this from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Get this from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Get this from @BotFather",
+      "required": true
+    },
+    "MONGO_URL": {
+      "description": "Your MongoDB Connection URL (from MongoDB Atlas)",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your Telegram User ID (integer) for sudo commands",
+      "required": true
+    },
+    "LOG_CHANNEL_ID": {
+      "description": "Channel ID for logs (Must start with -100). Make sure bot is Admin there.",
+      "required": true
+    },
+    "GIT_TOKEN": {
+      "description": "GitHub Token for the AI Chatbot features",
+      "required": false
+    },
+    "HEROKU_API_KEY": {
+      "description": "Your Heroku API Key (Found in Account Settings) for the /logs command",
+      "required": false
+    },
+    "HEROKU_APP_NAME": {
+      "description": "The exact name of this Heroku App (e.g., ryan-baka-bot-123)",
+      "required": false
+    }
+  },
   "formation": {
     "worker": {
       "quantity": 1,
