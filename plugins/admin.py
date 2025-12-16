@@ -1,190 +1,225 @@
-import os
+import time
+import asyncio
 from pyrogram import Client, filters
-# FIXED: Removed ChatPermissions from enums
 from pyrogram.enums import ChatType, ChatMemberStatus
-# FIXED: Added ChatPermissions to types
 from pyrogram.types import Message, ChatPermissions
 from motor.motor_asyncio import AsyncIOMotorClient
-# IMPORT CONFIG
 from config import MONGO_URL
 
-# --- DATABASE CONNECTION (For Warns) ---
+# --- DATABASE ---
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo.baka_bot
 users_col = db.users
 
-# --- HELPER: CHECK ADMIN ---
+# --- HELPER FUNCTIONS ---
+
 async def check_admin(message: Message):
-    """Checks if the user is an Admin or Owner."""
-    if message.chat.type == ChatType.PRIVATE:
-        return False
+    """Check if user is Admin/Owner"""
+    if message.chat.type == ChatType.PRIVATE: return False
     try:
         mem = await message.chat.get_member(message.from_user.id)
         return mem.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
-    except:
-        return False
+    except: return False
 
-# --- ADMIN ACTIONS (Ban, Kick, Mute, Promote, etc) ---
-@Client.on_message(filters.command(["ban", "unban", "kick", "mute", "unmute", "pin", "unpin", "demote", "promote", "del"], prefixes=".") & filters.group)
-async def admin_actions(client: Client, message: Message):
-    if not await check_admin(message):
-        return
+async def get_target_user(client, message):
+    """Extracts user from Reply OR Command Argument"""
+    if message.reply_to_message:
+        return message.reply_to_message.from_user
     
-    if not message.reply_to_message:
-        return await message.reply_text("⚠️ Reply to a user to perform this action.")
+    if len(message.command) > 1:
+        try:
+            # Try to resolve by ID or Username
+            user_id = message.command[1]
+            if user_id.isdigit():
+                return await client.get_users(int(user_id))
+            else:
+                return await client.get_users(user_id)
+        except:
+            return None
+    return None
 
+def get_time_seconds(time_str):
+    """Parses 1m, 1h, 1d into seconds"""
+    unit = time_str[-1].lower()
+    if unit not in ['m', 'h', 'd']: return 0
+    try:
+        val = int(time_str[:-1])
+    except: return 0
+    
+    if unit == 'm': return val * 60
+    if unit == 'h': return val * 3600
+    if unit == 'd': return val * 86400
+    return 0
+
+# --- COMMANDS ---
+
+# 1. BAN & UNBAN
+@Client.on_message(filters.command(["ban", "unban", "kick"], prefixes=["/", "."]) & filters.group)
+async def ban_kick_logic(client, message):
+    if not await check_admin(message): return
+    user = await get_target_user(client, message)
+    if not user: return await message.reply_text("❌ Please reply to a user or give their ID/Username.")
+    
     cmd = message.command[0]
-    user = message.reply_to_message.from_user
-    chat_id = message.chat.id
-    user_id = user.id
+    try:
+        if cmd == "ban":
+            await client.ban_chat_member(message.chat.id, user.id)
+            await message.reply_text(f"🚫 Banned {user.mention}!")
+        elif cmd == "unban":
+            await client.unban_chat_member(message.chat.id, user.id)
+            await message.reply_text(f"✅ Unbanned {user.mention}!")
+        elif cmd == "kick":
+            await client.ban_chat_member(message.chat.id, user.id)
+            await client.unban_chat_member(message.chat.id, user.id)
+            await message.reply_text(f"👢 Kicked {user.mention}!")
+    except Exception as e:
+        await message.reply_text("❌ Error: I need Admin Rights!")
+
+# 2. MUTE & UNMUTE
+@Client.on_message(filters.command(["mute", "unmute"], prefixes=["/", "."]) & filters.group)
+async def mute_logic(client, message):
+    if not await check_admin(message): return
+    user = await get_target_user(client, message)
+    if not user: return await message.reply_text("❌ Please reply to a user or give ID.")
+    
+    cmd = message.command[0]
+    if cmd == "unmute":
+        try:
+            await client.restrict_chat_member(message.chat.id, user.id, ChatPermissions(can_send_messages=True))
+            await message.reply_text(f"🗣️ Unmuted {user.mention}!")
+        except: await message.reply_text("❌ Error.")
+        return
+
+    # Logic for Mute Time
+    # If replying: command is [.mute, time] -> len 2
+    # If ID: command is [.mute, ID, time] -> len 3
+    
+    seconds = 0
+    reason = "Forever"
+    
+    args = message.command
+    if message.reply_to_message and len(args) > 1:
+        seconds = get_time_seconds(args[1])
+        if seconds > 0: reason = args[1]
+    elif len(args) > 2:
+        seconds = get_time_seconds(args[2])
+        if seconds > 0: reason = args[2]
 
     try:
-        # BAN
-        if cmd == "ban":
-            await client.ban_chat_member(chat_id, user_id)
-            await message.reply_text(f"🚫 **Banned** {user.mention}!")
+        until = datetime.now() + timedelta(seconds=seconds) if seconds > 0 else datetime.now() + timedelta(days=3650)
+        # Fix: Pyrogram expects until_date as a datetime object or timestamp
+        until_val = int(time.time() + seconds) if seconds > 0 else 0
         
-        # UNBAN
-        elif cmd == "unban":
-            await client.unban_chat_member(chat_id, user_id)
-            await message.reply_text(f"✅ **Unbanned** {user.mention}!")
+        await client.restrict_chat_member(
+            message.chat.id, 
+            user.id, 
+            ChatPermissions(can_send_messages=False),
+            until_date=until_val
+        )
+        await message.reply_text(f"🤐 Muted {user.mention} for **{reason}**!")
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
 
-        # KICK (Ban + Unban)
-        elif cmd == "kick":
-            await client.ban_chat_member(chat_id, user_id)
-            await client.unban_chat_member(chat_id, user_id)
-            await message.reply_text(f"👢 **Kicked** {user.mention}!")
-
-        # MUTE
-        elif cmd == "mute":
-            await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
-            await message.reply_text(f"🤐 **Muted** {user.mention}!")
-
-        # UNMUTE
-        elif cmd == "unmute":
-            await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=True))
-            await message.reply_text(f"🗣️ **Unmuted** {user.mention}!")
-
-        # PIN
-        elif cmd == "pin":
-            await message.reply_to_message.pin()
-            await message.reply_text("📌 Message Pinned!")
-
-        # UNPIN
-        elif cmd == "unpin":
-            await message.reply_to_message.unpin()
-            await message.reply_text("📌 Message Unpinned!")
-
-        # DELETE MESSAGE
-        elif cmd == "del":
-            await message.reply_to_message.delete()
-            await message.delete()
-
-        # DEMOTE
-        elif cmd == "demote":
+# 3. PROMOTE, DEMOTE, TITLE
+@Client.on_message(filters.command(["promote", "demote", "title"], prefixes=["/", "."]) & filters.group)
+async def promote_logic(client, message):
+    if not await check_admin(message): return
+    user = await get_target_user(client, message)
+    if not user: return await message.reply_text("❌ Target not found.")
+    
+    cmd = message.command[0]
+    
+    try:
+        if cmd == "demote":
             await client.promote_chat_member(
-                chat_id, user_id,
-                privileges=ChatPermissions(
-                    can_change_info=False,
-                    can_invite_users=False,
-                    can_delete_messages=False,
-                    can_restrict_members=False,
-                    can_pin_messages=False,
-                    can_promote_members=False,
-                    can_manage_chat=False,
-                    can_manage_video_chats=False
-                )
+                message.chat.id, user.id,
+                privileges=ChatPermissions(can_change_info=False) # Revoke all
             )
-            await message.reply_text(f"📉 **Demoted** {user.mention}!")
+            await message.reply_text(f"📉 Demoted {user.mention}!")
+            return
 
-        # PROMOTE
-        elif cmd == "promote":
-            await client.promote_chat_member(
-                chat_id, user_id,
-                privileges=ChatPermissions(
-                    can_change_info=True,
-                    can_invite_users=True,
-                    can_delete_messages=True,
-                    can_restrict_members=True,
-                    can_pin_messages=True,
-                    can_promote_members=False,
-                    can_manage_chat=True,
-                    can_manage_video_chats=True
-                )
-            )
-            await message.reply_text(f"👮‍♂️ **Promoted** {user.mention} to Admin!")
+        if cmd == "title":
+            if len(message.command) < 2 + (0 if message.reply_to_message else 1):
+                return await message.reply_text("❌ Usage: .title [reply/id] [Custom Title]")
+            
+            # Extract title string
+            title_parts = message.command[1:] if message.reply_to_message else message.command[2:]
+            title = " ".join(title_parts)
+            
+            await client.set_administrator_custom_title(message.chat.id, user.id, title)
+            await message.reply_text(f"🏷️ Title set for {user.mention}: **{title}**")
+            return
+
+        # PROMOTE LEVELS
+        level = "1"
+        if len(message.command) > (1 if message.reply_to_message else 2):
+            level = message.command[-1]
+            
+        perms = ChatPermissions(can_manage_chat=True) # Default
+        if level == "1": # Basic
+            perms = ChatPermissions(can_manage_chat=True, can_invite_users=True, can_delete_messages=True)
+        elif level == "2": # Mod
+            perms = ChatPermissions(can_manage_chat=True, can_invite_users=True, can_delete_messages=True, can_restrict_members=True, can_pin_messages=True)
+        elif level == "3": # Full
+            perms = ChatPermissions(can_manage_chat=True, can_invite_users=True, can_delete_messages=True, can_restrict_members=True, can_pin_messages=True, can_promote_members=True, can_change_info=True)
+            
+        await client.promote_chat_member(message.chat.id, user.id, privileges=perms)
+        await message.reply_text(f"👮‍♂️ Promoted {user.mention} to Admin (Level {level})!")
             
     except Exception as e:
-        # Print actual error to logs for debugging if needed
-        print(f"Admin Action Error: {e}")
-        await message.reply_text(f"❌ **Error:** I need Admin Rights (or higher rank) to do this!")
+        await message.reply_text("❌ Failed. I might need Add Admin rights.")
 
-# --- WARN SYSTEM (With Database) ---
-@Client.on_message(filters.command(["warn", "unwarn"], prefixes=".") & filters.group)
-async def warn_system(client: Client, message: Message):
-    if not await check_admin(message) or not message.reply_to_message: return
-
+# 4. PIN, UNPIN, DELETE
+@Client.on_message(filters.command(["pin", "unpin", "d"], prefixes=["/", "."]) & filters.group)
+async def msg_logic(client, message):
+    if not await check_admin(message): return
+    if not message.reply_to_message: return await message.reply_text("❌ Reply to a message!")
+    
     cmd = message.command[0]
-    user = message.reply_to_message.from_user
-    chat_id = message.chat.id
+    try:
+        if cmd == "pin":
+            await message.reply_to_message.pin()
+            await message.reply_text("📌 Pinned!")
+        elif cmd == "unpin":
+            await message.reply_to_message.unpin()
+            await message.reply_text("📌 Unpinned!")
+        elif cmd == "d":
+            await message.reply_to_message.delete()
+            await message.delete()
+    except:
+        await message.reply_text("❌ Error.")
 
-    # Get User Data
+# 5. WARN SYSTEM
+@Client.on_message(filters.command(["warn", "unwarn"], prefixes=["/", "."]) & filters.group)
+async def warn_logic(client, message):
+    if not await check_admin(message): return
+    user = await get_target_user(client, message)
+    if not user: return await message.reply_text("❌ Target not found.")
+    
     user_data = await users_col.find_one({"_id": user.id})
-    if not user_data:
+    if not user_data: 
         await users_col.insert_one({"_id": user.id, "warns": 0})
         warns = 0
     else:
         warns = user_data.get("warns", 0)
-
+        
+    cmd = message.command[0]
     if cmd == "warn":
         warns += 1
         await users_col.update_one({"_id": user.id}, {"$set": {"warns": warns}})
-        
         if warns >= 3:
             try:
-                await client.ban_chat_member(chat_id, user.id)
+                await client.ban_chat_member(message.chat.id, user.id)
                 await users_col.update_one({"_id": user.id}, {"$set": {"warns": 0}})
-                await message.reply_text(f"🚫 {user.mention} has been banned! (3/3 Warns)")
-            except:
-                await message.reply_text(f"⚠️ {user.mention} reached 3 warns but I can't ban them!")
+                await message.reply_text(f"🚫 {user.mention} banned (3/3 warns)!")
+            except: await message.reply_text("⚠️ 3 warns reached but cannot ban.")
         else:
-            await message.reply_text(f"⚠️ **Warned** {user.mention}! ({warns}/3)")
-
+            await message.reply_text(f"⚠️ Warned {user.mention}! ({warns}/3)")
+            
     elif cmd == "unwarn":
         if warns > 0:
             warns -= 1
             await users_col.update_one({"_id": user.id}, {"$set": {"warns": warns}})
-            await message.reply_text(f"📉 **Unwarned** {user.mention}. ({warns}/3)")
+            await message.reply_text(f"📉 Unwarned {user.mention}. ({warns}/3)")
         else:
-            await message.reply_text(f"{user.mention} has no warns!")
-
-# --- INFO COMMANDS ---
-@Client.on_message(filters.command("adminlist"))
-async def adminlist(client: Client, message: Message):
-    if message.chat.type == ChatType.PRIVATE: return
-    admins = []
-    async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.ADMINISTRATOR):
-        if m.user: admins.append(m.user.mention)
-    
-    await message.reply_text("👮‍♂️ **Group Staff:**\n" + "\n".join(admins))
-
-@Client.on_message(filters.command("owner"))
-async def owner_tag(client: Client, message: Message):
-    if message.chat.type == ChatType.PRIVATE: return
-    async for m in client.get_chat_members(message.chat.id, filter=ChatMemberStatus.OWNER):
-        if m.user: await message.reply_text(f"👑 **Owner:** {m.user.mention}")
-
-# --- GROUP SETTINGS (OPEN/CLOSE) ---
-@Client.on_message(filters.command("open"))
-async def open_cmd(client: Client, message: Message):
-    if message.chat.type == ChatType.PRIVATE:
-        return await message.reply_text("❌ You can use these commands in groups only.")
-    if not await check_admin(message): return
-    await message.reply_text("✅ All economy commands have been enabled.")
-
-@Client.on_message(filters.command("close"))
-async def close_cmd(client: Client, message: Message):
-    if message.chat.type == ChatType.PRIVATE:
-        return await message.reply_text("❌ You can use these commands in groups only.")
-    if not await check_admin(message): return
-    await message.reply_text("🚫 All economy commands have been disabled.")
+            await message.reply_text("User has 0 warns.")
