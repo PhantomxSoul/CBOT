@@ -30,10 +30,11 @@ from pyrogram.types import BotCommand
 from config import API_ID, API_HASH, BOT_TOKEN, MONGO_URL, LOG_CHANNEL_ID
 
 # IMPORT HELPER TEXTS
-# This requires helper.py to be inside the 'plugins' folder!
-from plugins.helper import START_TEXT, HELP_TEXT
+# NOTE: Ensure helper.py is inside the 'plugins' folder!
+from plugins.helper import START_TEXT
 
 # INITIALIZE CLIENT
+# 'plugins=dict(root="plugins")' automatically loads all files in the plugins folder
 app = Client(
     "baka_master", 
     api_id=API_ID, 
@@ -49,13 +50,13 @@ if not MONGO_URL:
 
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo.baka_bot
-users_col = db.users
 
 # --- HELPER FUNCTIONS ---
 async def log_deployment():
-    if LOG_CHANNEL_ID != 0:
+    if LOG_CHANNEL_ID:
         try:
             # FIX: FORCE BOT TO FETCH CHAT INFO FIRST
+            # This solves the "Peer id invalid" error on Heroku restarts
             try:
                 await app.get_chat(LOG_CHANNEL_ID)
             except:
@@ -63,7 +64,7 @@ async def log_deployment():
 
             await app.send_message(
                 LOG_CHANNEL_ID, 
-                f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: v4.0 (Fixed)",
+                f"✅ **Bot Deployed Successfully!**\n📅 {datetime.now()}\n🤖 Version: Modular v5.0 (Final)",
                 disable_web_page_preview=True
             )
             print("✅ Deployment Log Sent.")
@@ -75,7 +76,7 @@ async def log_deployment():
 async def main():
     print("Bot Starting...")
     
-    # 1. Start the Bot
+    # 1. Start the Bot Client
     await app.start()
     print("Bot Client Started.")
     
@@ -128,12 +129,16 @@ async def main():
     ]
     try:
         await app.set_bot_commands([BotCommand(c, d) for c, d in commands])
-        print("✅ Bot Commands Set.")
+        print("✅ Bot Commands Set Successfully.")
     except Exception as e:
         print(f"⚠️ Failed to set commands: {e}")
 
-    print("Bot is Idle and Running!")
+    print("Bot is Alive and Running!")
+    
+    # 4. Keep the bot running
     await idle()
+    
+    # 5. Stop the bot gracefully
     await app.stop()
 
 if __name__ == "__main__":
