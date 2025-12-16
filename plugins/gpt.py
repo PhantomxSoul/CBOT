@@ -4,7 +4,6 @@ import requests
 import urllib.parse
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatAction
-# CHANGED: Import GIT_TOKEN
 from config import GIT_TOKEN
 
 # --- AI ENGINES ---
