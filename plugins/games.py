@@ -70,7 +70,6 @@ async def check_premium_cmd(client: Client, message: Message):
     
     # PREMIUM CHECK LOGIC
     if not user.get("premium", False):
-        # CORRECTED: Only sends the Bot's reply part
         return await message.reply_text(
             "𝐁ᴀᴋᴀ 💗:\n"
             "❌ This command is only for Premium users."
@@ -184,12 +183,24 @@ async def kill(client: Client, message: Message):
     killer = await get_user(message.from_user.id)
     victim = await get_user(message.reply_to_message.from_user.id)
     
-    if killer['status'] == "dead": return await message.reply_text("You are dead!")
+    if killer['status'] == "dead": return await message.reply_text("You are dead ☠️")
+    if victim['status'] == "dead": return await message.reply_text("They are already dead ☠️")
     if time.time() < victim['protected_until']: return await message.reply_text("🛡️ Protected!")
     
+    # Random Reward Logic
+    reward = random.randint(100, 200)
+    
     await update_user(victim['_id'], {"status": "dead"})
-    await update_user(killer['_id'], {"kills": killer['kills'] + 1})
-    await message.reply_text("🔪 Killed successfully!")
+    await update_user(killer['_id'], {
+        "kills": killer['kills'] + 1,
+        "balance": killer['balance'] + reward
+    })
+    
+    # Updated Success Message
+    await message.reply_text(
+        f"👤 {message.from_user.mention} killed {message.reply_to_message.from_user.mention}!\n"
+        f"💰 Earned: ${reward}"
+    )
 
 @Client.on_message(filters.command("revive"))
 async def revive(client: Client, message: Message):
