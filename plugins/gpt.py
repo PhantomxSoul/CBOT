@@ -7,17 +7,12 @@ from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatAction
 from config import GIT_TOKEN
 
-# --- SECURITY ENCRYPTION ---
-# These strings are encrypted so no one knows the real provider
 def _decrypt(data):
     return base64.b64decode(data).decode("utf-8")
 
-# Encrypted Endpoint (AIMLAPI)
 _E_URL = "aHR0cHM6Ly9hcGkuYWltbGFwaS5jb20vY2hhdC9jb21wbGV0aW9ucw=="
-# Encrypted Model (gpt-4o)
 _E_MOD = "Z3B0LTRv"
 
-# --- AI ENGINES ---
 
 def ai_secure_engine(text):
     if not GIT_TOKEN:
