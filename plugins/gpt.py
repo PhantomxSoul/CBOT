@@ -5,34 +5,26 @@ from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatAction
 from config import GIT_TOKEN
 
-# --- SECURITY ENCRYPTION ---
 def _decrypt(data):
     return base64.b64decode(data).decode("utf-8")
 
-# Encrypted Endpoint (AIMLAPI)
-_E_URL = "aHR0cHM6Ly9hcGkuYWltbGFwaS5jb20vY2hhdC9jb21wbGV0aW9ucw=="
+_E_URL = "aHR0cHM6Ly9hcGkuZ3JvcS5jb20vb3BlbmFpL3YxL2NoYXQvY29tcGxldGlvbnM="
 
-# Encrypted Creator Tag (@WTF_Phantom)
 _E_CREATOR = "QFdURl9QaGFudG9t"
 
-# Encrypted Models List (Fallback System)
-# 1. gpt-4o
-# 2. gpt-4o-mini
-# 3. meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
 _E_MODELS = [
-    "Z3B0LTRv", 
-    "Z3B0LTRvLW1pbmk=", 
-    "bWV0YS1sbGFtYS9NZXRhLUxsYW1hLTMuMS03MEItSW5zdHJ1Y3QtVHVyYm8="
+    "bGxhbWEtMy4zLTcwYi12ZXJzYXRpbGU=", 
+    "bGxhbWEtMy4xLThiLWluc3RhbnQ=", 
+    "bWl4dHJhbC04eDdiLTMyNzY4"
 ]
 
-def ai_secure_engine(text):
+def ai_groq_engine(text):
     if not GIT_TOKEN:
-        print("⚠️ AI Token Missing.")
+        print("⚠️(GIT_TOKEN) Missing.")
         return None
 
     try:
         target_url = _decrypt(_E_URL)
-        # Decrypt Owner for System Prompt
         owner_tag = _decrypt(_E_CREATOR)
 
         headers = {
@@ -45,7 +37,7 @@ def ai_secure_engine(text):
             try:
                 target_model = _decrypt(enc_model)
 
-                # Injected Owner Tag into System Prompt securely
+                # Secure System Prompt
                 sys_prompt = f"You are Baka, a sassy female bot created by {owner_tag}. Reply in Hinglish (Hindi+English). Be savage but cute. Keep replies very short (1-2 sentences max)."
 
                 payload = {
@@ -54,7 +46,7 @@ def ai_secure_engine(text):
                         {"role": "user", "content": text}
                     ], 
                     "model": target_model, 
-                    "temperature": 0.7,
+                    "temperature": 0.7, 
                     "max_tokens": 150
                 }
 
@@ -63,15 +55,16 @@ def ai_secure_engine(text):
                 if res.status_code == 200:
                     return res.json()["choices"][0]["message"]["content"]
                 else:
-                    print(f"⚠️ Model {target_model} busy/failed ({res.status_code}), switching...")
-                    continue # Try next model
+                    # If model is overloaded (503/429), loop continues to next model
+                    print(f"Model {target_model} busy ({res.status_code}). Switching...")
+                    continue 
 
             except Exception as e: 
-                print(f"❌ Secure AI Exception on {target_model}: {e}")
-                continue # Try next model
+                print(f"❌ Groq Exception on {target_model}: {e}")
+                continue
 
     except Exception as e:
-        print(f"❌ AI Critical Error: {e}")
+        print(f"❌ Groq Critical Error: {e}")
 
     return None
 
@@ -86,11 +79,11 @@ async def chat_handler(client, message):
     if is_private or is_mentioned or is_reply:
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
 
-        # 1. Try Secure Engine (Multi-Model Fallback)
-        response = await asyncio.to_thread(ai_secure_engine, message.text)
+        # 1. Try Groq Engine (Multi-Model)
+        response = await asyncio.to_thread(ai_groq_engine, message.text)
 
-        # 2. Final Error (If all models in list fail)
+        # 2. Final Error
         if not response:
-            response = "Server busy hai yaar... baad mein aana! 😵‍💫"
+            response = "Server busy hai yaar... 😵‍💫"
 
         await message.reply_text(response)
