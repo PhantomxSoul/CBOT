@@ -60,11 +60,11 @@ def ai_groq_engine(text):
                     continue 
 
             except Exception as e: 
-                print(f"❌ Groq Exception on {target_model}: {e}")
+                print(f"❌ API Exception on {target_model}: {e}")
                 continue
 
     except Exception as e:
-        print(f"❌ Groq Critical Error: {e}")
+        print(f"❌ API Critical Error: {e}")
 
     return None
 
@@ -79,7 +79,6 @@ async def chat_handler(client, message):
     if is_private or is_mentioned or is_reply:
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
 
-        # 1. Try Groq Engine (Multi-Model)
         response = await asyncio.to_thread(ai_groq_engine, message.text)
 
         # 2. Final Error
