@@ -12,6 +12,7 @@ _E_URL = "aHR0cHM6Ly9hcGkuZ3JvcS5jb20vb3BlbmFpL3YxL2NoYXQvY29tcGxldGlvbnM="
 
 _E_CREATOR = "QFdURl9QaGFudG9t"
 
+# Encrypted Models List (Groq Multi-Model Fallback)
 _E_MODELS = [
     "bGxhbWEtMy4zLTcwYi12ZXJzYXRpbGU=", 
     "bGxhbWEtMy4xLThiLWluc3RhbnQ=", 
@@ -72,16 +73,24 @@ def ai_groq_engine(text):
 
 @Client.on_message(filters.text & ~filters.regex(r"^[/\.]"))
 async def chat_handler(client, message):
+    if not message.text: return
+    
+    # 1. Check conditions
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
+    
+    triggers = ["hi", "hello", "baka"]
+    # Check if message starts with any trigger word (case insensitive)
+    text_lower = message.text.lower().split()
+    is_trigger = text_lower[0] in triggers if text_lower else False
 
-    if is_private or is_mentioned or is_reply:
+    if is_private or is_mentioned or is_reply or is_trigger:
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
 
         response = await asyncio.to_thread(ai_groq_engine, message.text)
 
-        # 2. Final Error
+        # Final Error
         if not response:
             response = "Server busy hai yaar... 😵‍💫"
 
