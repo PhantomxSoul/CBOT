@@ -5,6 +5,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.types import Message
+# Requires: pip install googletrans==4.0.0-rc1
+from googletrans import Translator
+
 # IMPORT CONFIG
 from config import MONGO_URL
 # IMPORT HELPER TEXTS
@@ -15,6 +18,9 @@ mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo.baka_bot
 users_col = db.users
 chats_col = db.chats
+
+# --- TRANSLATOR INIT ---
+trans = Translator()
 
 # --- ITEM SHOP DATA ---
 SHOP_ITEMS = {
@@ -31,21 +37,48 @@ SHOP_ITEMS = {
 }
 
 # --- HELPER FUNCTIONS ---
+
 async def get_user(user_id, name="User"):
     user = await users_col.find_one({"_id": user_id})
+    now = time.time()
+    
+    # Create User if not exists
     if not user:
         user = {
             "_id": user_id, 
             "name": name, 
             "balance": 0, 
             "status": "alive",
+            "death_time": 0,
             "kills": 0, 
             "premium": False, 
             "last_daily": 0, 
             "protected_until": 0,
-            "items": {} 
+            "items": {},
+            "name_history": []
         }
         await users_col.insert_one(user)
+    
+    # 1. AUTO-REVIVE LOGIC (6 Hours = 21600 seconds)
+    if user['status'] == 'dead' and user.get('death_time', 0) > 0:
+        if (now - user['death_time']) > 21600:
+            # Revive with random balance < 200
+            new_bal = random.randint(10, 199)
+            await users_col.update_one(
+                {"_id": user_id}, 
+                {"$set": {"status": "alive", "death_time": 0, "balance": new_bal}}
+            )
+            user['status'] = "alive"
+            user['balance'] = new_bal
+
+    # 2. NAME HISTORY TRACKER (For /detail)
+    if name != "User" and user.get('name') != name:
+        # Add old name to history if changed
+        await users_col.update_one(
+            {"_id": user_id}, 
+            {"$push": {"name_history": user['name']}, "$set": {"name": name}}
+        )
+
     return user
 
 async def update_user(user_id, data):
@@ -68,14 +101,12 @@ async def is_game_enabled(chat_id):
 async def check_premium_cmd(client: Client, message: Message):
     user = await get_user(message.from_user.id, message.from_user.first_name)
     
-    # PREMIUM CHECK LOGIC
     if not user.get("premium", False):
         return await message.reply_text(
             "𝐁ᴀᴋᴀ 💗:\n"
             "❌ This command is only for Premium users."
         )
         
-    # IF PREMIUM
     rem = user.get('protected_until', 0) - time.time()
     prot_status = f"Active ({int(rem/3600)}h left) 🛡️" if rem > 0 else "Inactive ❌"
     
@@ -90,7 +121,6 @@ async def check_premium_cmd(client: Client, message: Message):
 async def open_games(client: Client, message: Message):
     if not await is_admin(message):
         return await message.reply_text("❌ You need to be an Admin to use this!")
-    
     await chats_col.update_one({"_id": message.chat.id}, {"$set": {"games_enabled": True}}, upsert=True)
     await message.reply_text(GAME_OPEN_TEXT)
 
@@ -98,13 +128,11 @@ async def open_games(client: Client, message: Message):
 async def close_games(client: Client, message: Message):
     if not await is_admin(message):
         return await message.reply_text("❌ You need to be an Admin to use this!")
-    
     await chats_col.update_one({"_id": message.chat.id}, {"$set": {"games_enabled": False}}, upsert=True)
     await message.reply_text(GAME_CLOSE_TEXT)
 
 @Client.on_message(filters.command("claim") & filters.group)
 async def claim_reward(client: Client, message: Message):
-    # Only Admins can claim
     if not await is_admin(message):
         return await message.reply_text("❌ Only Admins can claim the group reward!")
 
@@ -115,9 +143,9 @@ async def claim_reward(client: Client, message: Message):
     if chat_data and chat_data.get("claimed", False):
         return await message.reply_text("❌ This group has already claimed the start reward!")
         
-    # Give Reward
     reward = 5000
-    await update_user(user_id, {"balance": (await get_user(user_id))['balance'] + reward})
+    user = await get_user(user_id)
+    await update_user(user_id, {"balance": user['balance'] + reward})
     await chats_col.update_one({"_id": chat_id}, {"$set": {"claimed": True}}, upsert=True)
     
     await message.reply_text(f"✅ **Group Reward Claimed!**\n👤 {message.from_user.mention} got ${reward}!")
@@ -140,10 +168,21 @@ async def daily(client: Client, message: Message):
 
 @Client.on_message(filters.command("bal"))
 async def bal(client: Client, message: Message):
-    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    # Logic: Show target balance if reply, else show own balance
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    else:
+        target = message.from_user
+        
     data = await get_user(target.id, target.first_name)
-    badge = "💎" if data['premium'] else "👤"
-    await message.reply_text(f"{badge} **Name:** {data['name']}\n💰 **Balance:** ${data['balance']}\n❤️ **Status:** {data['status']}")
+    
+    # Exact Format Requested
+    status_icon = "❤️" if data['status'] == 'alive' else "☠️"
+    await message.reply_text(
+        f"👤 Name: {data['name']}\n"
+        f"💰 Balance: ${data['balance']}\n"
+        f"{status_icon} Status: {data['status'].title()}"
+    )
 
 @Client.on_message(filters.command("rob"))
 async def rob(client: Client, message: Message):
@@ -153,8 +192,10 @@ async def rob(client: Client, message: Message):
     robber = await get_user(message.from_user.id)
     victim = await get_user(message.reply_to_message.from_user.id)
     
-    if robber['status'] == "dead": return await message.reply_text("You are dead ☠️")
-    if victim['status'] == "dead": return await message.reply_text("They are already dead ☠️")
+    # Dead users CAN rob (per request "dead user... only can rob")
+    # But victim must be alive or dead? Usually robbing dead people is fine.
+    
+    if victim['status'] == "dead": return await message.reply_text("They are dead ☠️ (Wait for revive)")
     if time.time() < victim['protected_until']: return await message.reply_text("🛡️ Protected!")
 
     limit = 100000 if robber['premium'] else 10000
@@ -163,7 +204,6 @@ async def rob(client: Client, message: Message):
     
     if amt > limit: amt = limit
     if victim['balance'] < amt: amt = victim['balance']
-
     if amt <= 0: return await message.reply_text("They are broke!")
     
     if random.choice([True, False]):
@@ -178,25 +218,41 @@ async def rob(client: Client, message: Message):
 @Client.on_message(filters.command("kill"))
 async def kill(client: Client, message: Message):
     if not await is_game_enabled(message.chat.id): return
-    if not message.reply_to_message: return
+    
+    # Fix: Check Reply
+    if not message.reply_to_message: 
+        return await message.reply_text("❌ You have to reply to a user to kill them!")
     
     killer = await get_user(message.from_user.id)
     victim = await get_user(message.reply_to_message.from_user.id)
     
-    if killer['status'] == "dead": return await message.reply_text("You are dead ☠️")
-    if victim['status'] == "dead": return await message.reply_text("They are already dead ☠️")
-    if time.time() < victim['protected_until']: return await message.reply_text("🛡️ Protected!")
+    # Fix: Dead users CANNOT kill
+    if killer['status'] == "dead":
+        return await message.reply_text("❌ You are dead! You can only /rob or wait 6h to revive.")
+        
+    if victim['status'] == "dead": 
+        return await message.reply_text("⚠️ They are already dead!")
+        
+    if time.time() < victim['protected_until']: 
+        return await message.reply_text("🛡️ Protected!")
     
-    # Random Reward Logic
+    # Random Reward Logic ($100 - $200)
     reward = random.randint(100, 200)
     
-    await update_user(victim['_id'], {"status": "dead"})
+    # Set Victim Dead + Time
+    await update_user(victim['_id'], {
+        "status": "dead", 
+        "death_time": time.time(),
+        "balance": 0 # Usually death loses money
+    })
+    
+    # Reward Killer
     await update_user(killer['_id'], {
         "kills": killer['kills'] + 1,
         "balance": killer['balance'] + reward
     })
     
-    # Updated Success Message
+    # Fix: Exact Message Format
     await message.reply_text(
         f"👤 {message.from_user.mention} killed {message.reply_to_message.from_user.mention}!\n"
         f"💰 Earned: ${reward}"
@@ -205,30 +261,43 @@ async def kill(client: Client, message: Message):
 @Client.on_message(filters.command("revive"))
 async def revive(client: Client, message: Message):
     if not await is_game_enabled(message.chat.id): return
-    target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
-    t_data = await get_user(target.id)
+    
+    # Target is the user being replied to
+    if not message.reply_to_message:
+        return await message.reply_text("Reply to the user you want to revive!")
+
+    target_user = message.reply_to_message.from_user
+    t_data = await get_user(target_user.id)
     p_data = await get_user(message.from_user.id)
 
     if t_data['status'] == "alive":
-        return await message.reply_text(f"✅ {target.mention} is already alive!")
+        return await message.reply_text(f"✅ {target_user.mention} is already alive!")
+        
     if p_data['balance'] < 500:
-        return await message.reply_text(f"❌ You need $500 to revive!")
+        return await message.reply_text(f"❌ You need 500 coins to revive someone!")
 
+    # Deduct Cost
     await update_user(p_data['_id'], {"balance": p_data['balance'] - 500})
-    await update_user(t_data['_id'], {"status": "alive"})
-    await message.reply_text(f"❤️ Revived {target.mention}!")
+    
+    # Revive with Random Balance < 200
+    revive_bal = random.randint(10, 199)
+    await update_user(t_data['_id'], {
+        "status": "alive", 
+        "death_time": 0,
+        "balance": revive_bal
+    })
+    
+    await message.reply_text(f"❤️ Revived {target_user.mention}!\n💰 They spawned with ${revive_bal}.")
 
 @Client.on_message(filters.command("protect"))
 async def protect(client: Client, message: Message):
-    if len(message.command) < 2: return await message.reply_text("Usage: /protect 1d (Cost: $2000/day)")
+    if len(message.command) < 2: return await message.reply_text("Usage: /protect 1d")
     
     days_map = {"1d": 1, "2d": 2, "3d": 3}
     days = days_map.get(message.command[1])
     if not days: return await message.reply_text("Invalid duration. Use 1d, 2d, or 3d.")
     
     user = await get_user(message.from_user.id)
-    
-    # PREMIUM CHECK for > 1 day
     if days > 1 and not user.get('premium', False):
         return await message.reply_text("❌ 2d and 3d protection is for Premium Users only!")
         
@@ -249,11 +318,62 @@ async def give(client: Client, message: Message):
     if sender['balance'] < amt: return await message.reply_text("❌ Low balance.")
     
     rec = await get_user(message.reply_to_message.from_user.id)
-    tax = int(amt * 0.10) # 10% Tax
+    tax = int(amt * 0.10)
     
     await update_user(sender['_id'], {"balance": sender['balance'] - amt})
     await update_user(rec['_id'], {"balance": rec['balance'] + (amt - tax)})
     await message.reply_text(f"💸 Sent ${amt-tax} (Tax: ${tax})")
+
+# ---------------- UTILITY & FUN COMMANDS ---------------- #
+
+@Client.on_message(filters.command("tr"))
+async def translate_cmd(client: Client, message: Message):
+    if not message.reply_to_message:
+        return await message.reply_text("❌ Reply to a message to translate it!")
+    
+    try:
+        # Translate detected lang -> English
+        txt = message.reply_to_message.text or message.reply_to_message.caption
+        if not txt: return
+        
+        result = trans.translate(txt, dest='en')
+        await message.reply_text(
+            f"🌍 **Translation (to English):**\n\n`{result.text}`"
+        )
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
+
+@Client.on_message(filters.command("detail"))
+async def detail_cmd(client: Client, message: Message):
+    # Resolve Target
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+    elif len(message.command) > 1:
+        try:
+            target = await client.get_users(message.command[1])
+        except:
+            return await message.reply_text("❌ User not found.")
+    else:
+        target = message.from_user
+        
+    # Fetch Data
+    user_data = await get_user(target.id, target.first_name)
+    history = user_data.get("name_history", [])
+    
+    # Format History
+    if history:
+        history_txt = "\n".join([f"• {n}" for n in set(history[-5:])]) # Show last 5 unique names
+    else:
+        history_txt = "No name changes recorded."
+    
+    txt = (
+        f"👤 **User Details**\n"
+        f"🆔 ID: `{target.id}`\n"
+        f"📛 Name: {target.mention}\n"
+        f"✏️ Username: @{target.username if target.username else 'None'}\n\n"
+        f"📜 **Past Names:**\n{history_txt}"
+    )
+    await message.reply_text(txt)
 
 @Client.on_message(filters.command("pay"))
 async def pay(client: Client, message: Message):
@@ -278,8 +398,6 @@ async def topkill(client: Client, message: Message):
         txt += f"{i}. {u['name']} - {u['kills']} Kills\n"
         i += 1
     await message.reply_text(txt)
-
-# ---------------- ITEM SHOP & FUN ---------------- #
 
 @Client.on_message(filters.command("items"))
 async def shop_list(client: Client, message: Message):
