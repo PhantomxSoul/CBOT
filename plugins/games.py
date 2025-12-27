@@ -5,7 +5,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.types import Message
-# Requires: pip install googletrans==4.0.0-rc1
 from googletrans import Translator
 
 # IMPORT CONFIG
