@@ -19,7 +19,6 @@ def ai_secure_engine(text):
         print("⚠️ AI Token Missing.")
         return None
     try:
-        # Decrypting credentials at runtime
         target_url = _decrypt(_E_URL)
         target_model = _decrypt(_E_MOD)
         
