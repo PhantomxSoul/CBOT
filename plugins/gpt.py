@@ -7,14 +7,11 @@ from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ChatAction
 from config import GIT_TOKEN
 
-# --- SECURITY ENCRYPTION ---
 def _decrypt(data):
     return base64.b64decode(data).decode("utf-8")
 
-# Encrypted Endpoint (AIMLAPI)
 _E_URL = "aHR0cHM6Ly9hcGkuYWltbGFwaS5jb20vY2hhdC9jb21wbGV0aW9ucw=="
 
-# Encrypted Owner/Creator Tag (@WTF_Phantom)
 _E_CREATOR = "QFdURl9QaGFudG9t"
 
 # Encrypted Models List (Fallback System)
