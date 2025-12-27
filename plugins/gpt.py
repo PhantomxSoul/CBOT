@@ -14,10 +14,6 @@ _E_URL = "aHR0cHM6Ly9hcGkuYWltbGFwaS5jb20vY2hhdC9jb21wbGV0aW9ucw=="
 
 _E_CREATOR = "QFdURl9QaGFudG9t"
 
-# Encrypted Models List (Fallback System)
-# 1. gpt-4o
-# 2. gpt-4o-mini
-# 3. meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
 _E_MODELS = [
     "Z3B0LTRv", 
     "Z3B0LTRvLW1pbmk=", 
