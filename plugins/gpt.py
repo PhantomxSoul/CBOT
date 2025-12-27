@@ -14,6 +14,9 @@ def _decrypt(data):
 # Encrypted Endpoint (AIMLAPI)
 _E_URL = "aHR0cHM6Ly9hcGkuYWltbGFwaS5jb20vY2hhdC9jb21wbGV0aW9ucw=="
 
+# Encrypted Owner/Creator Tag (@WTF_Phantom)
+_E_CREATOR = "QFdURl9QaGFudG9t"
+
 # Encrypted Models List (Fallback System)
 # 1. gpt-4o
 # 2. gpt-4o-mini
@@ -29,45 +32,59 @@ def ai_secure_engine(text):
         print("⚠️ AI Token Missing.")
         return None
     
-    target_url = _decrypt(_E_URL)
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {GIT_TOKEN}"
-    }
+    try:
+        target_url = _decrypt(_E_URL)
+        # Decrypt Owner for System Prompt
+        owner_tag = _decrypt(_E_CREATOR)
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {GIT_TOKEN}"
+        }
 
-    # Loop through models: If one fails, try the next
-    for enc_model in _E_MODELS:
-        try:
-            target_model = _decrypt(enc_model)
-            
-            payload = {
-                "messages": [
-                    {"role": "system", "content": "You are Baka, a sassy female bot. Reply in Hinglish (Hindi+English). Be savage but cute. Keep replies very short (1-2 sentences max)."}, 
-                    {"role": "user", "content": text}
-                ], 
-                "model": target_model, 
-                "temperature": 0.7,
-                "max_tokens": 150
-            }
-
-            res = requests.post(target_url, headers=headers, json=payload, timeout=8)
-
-            if res.status_code == 200:
-                return res.json()["choices"][0]["message"]["content"]
-            else:
-                print(f"⚠️ Model {target_model} busy/failed ({res.status_code}), switching...")
-                continue # Try next model
+        # Loop through models: If one fails, try the next
+        for enc_model in _E_MODELS:
+            try:
+                target_model = _decrypt(enc_model)
                 
-        except Exception as e: 
-            print(f"❌ Secure AI Exception on {target_model}: {e}")
-            continue # Try next model
+                # Injected Owner Tag into System Prompt securely
+                sys_prompt = f"You are Baka, a sassy female bot created by {owner_tag}. Reply in Hinglish (Hindi+English). Be savage but cute. Keep replies very short (1-2 sentences max)."
 
+                payload = {
+                    "messages": [
+                        {"role": "system", "content": sys_prompt}, 
+                        {"role": "user", "content": text}
+                    ], 
+                    "model": target_model, 
+                    "temperature": 0.7,
+                    "max_tokens": 150
+                }
+
+                res = requests.post(target_url, headers=headers, json=payload, timeout=8)
+
+                if res.status_code == 200:
+                    return res.json()["choices"][0]["message"]["content"]
+                else:
+                    print(f"⚠️ Model {target_model} busy/failed ({res.status_code}), switching...")
+                    continue # Try next model
+                    
+            except Exception as e: 
+                print(f"❌ Secure AI Exception on {target_model}: {e}")
+                continue # Try next model
+
+    except Exception as e:
+        print(f"❌ AI Critical Error: {e}")
+        
     return None
 
 def ai_pollinations(text):
     try:
+        # Decrypt Owner for Fallback System Prompt
+        owner_tag = _decrypt(_E_CREATOR)
+        
         seed = random.randint(1, 9999)
-        system = "You are Baka, a sassy female Telegram bot. Reply in Hinglish. Keep it short."
+        system = f"You are Baka, a sassy female Telegram bot created by {owner_tag}. Reply in Hinglish. Keep it short."
+        
         encoded_text = urllib.parse.quote(text)
         encoded_sys = urllib.parse.quote(system)
 
