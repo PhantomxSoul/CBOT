@@ -8,8 +8,6 @@ from pyrogram.types import BotCommand
 # IMPORT SETTINGS FROM CONFIG
 from config import API_ID, API_HASH, BOT_TOKEN, MONGO_URL, LOG_CHANNEL_ID
 
-# INITIALIZE CLIENT
-# 'plugins=dict(root="plugins")' automatically loads all files in the plugins folder
 app = Client(
     "baka_master", 
     api_id=API_ID, 
