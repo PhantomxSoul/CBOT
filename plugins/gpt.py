@@ -74,16 +74,25 @@ def ai_groq_engine(text):
 @Client.on_message(filters.text & ~filters.regex(r"^[/\.]"))
 async def chat_handler(client, message):
     if not message.text: return
-    
+
     # 1. Check conditions
     is_private = message.chat.type == ChatType.PRIVATE
     is_mentioned = message.mentioned
     is_reply = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
+
+    # 2. Trigger Logic Fixed
+    # Jey hata diya, baaki variations add kiye
+    triggers = ["hi", "hii", "hello", "baka", "hey", "hlo"]
     
-    triggers = ["hi", "hello", "baka"]
-    # Check if message starts with any trigger word (case insensitive)
-    text_lower = message.text.lower().split()
-    is_trigger = text_lower[0] in triggers if text_lower else False
+    text_lower = message.text.lower().strip()
+    
+    # Message ka pehla shabd nikalo
+    first_word = text_lower.split()[0] if text_lower else ""
+    
+    # Punctuation (.,!?) hatao taaki "Hi!" bhi pakad le
+    first_word = first_word.strip(".,!?")
+
+    is_trigger = first_word in triggers
 
     if is_private or is_mentioned or is_reply or is_trigger:
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
