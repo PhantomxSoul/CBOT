@@ -84,10 +84,8 @@ async def chat_handler(client, message):
     
     text_lower = message.text.lower().strip()
     
-    # Message ka pehla shabd nikalo
     first_word = text_lower.split()[0] if text_lower else ""
     
-    # Punctuation (.,!?) hatao taaki "Hi!" bhi pakad le
     first_word = first_word.strip(".,!?")
 
     is_trigger = first_word in triggers
