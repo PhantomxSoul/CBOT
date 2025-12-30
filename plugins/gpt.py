@@ -80,8 +80,6 @@ async def chat_handler(client, message):
     is_mentioned = message.mentioned
     is_reply = message.reply_to_message and message.reply_to_message.from_user.id == client.me.id
 
-    # 2. Trigger Logic Fixed
-    # Jey hata diya, baaki variations add kiye
     triggers = ["hi", "hii", "hello", "baka", "hey", "hlo"]
     
     text_lower = message.text.lower().strip()
